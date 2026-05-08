@@ -40,5 +40,10 @@ setup:
 	@git config core.hooksPath .githooks
 	@echo "Done! Pre-commit hooks are now active."
 
+readme-help:
+	@out=$$(mktemp); trap 'rm -f "$$out"' EXIT INT TERM; \
+	  perl -pe'BEGIN{$$/=q(<!-- help begin -->)} if($$/=~s/begin/end/){<>;$$_.="\n\n```text\n".`go run . --help`."```\n\n$$/"}' README.md > "$$out" && \
+		mv "$$out" README.md
+
 # Phony targets
-.PHONY: build run up lint setup
+.PHONY: build run up lint setup readme-help

@@ -1,61 +1,3 @@
-[![](https://dcbadge.vercel.app/api/server/Zr8J3bCdkv)](https://discord.gg/Zr8J3bCdkv)
-[![NPM](https://nodei.co/npm/go-ios.png?mini=true)](https://npmjs.org/package/go-ios)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Twitter](https://img.shields.io/twitter/url/https/twitter.com/daniel1paulus.svg?style=social&label=Follow%20%40daniel1paulus)](https://twitter.com/daniel1paulus)
-[![NPM](https://img.shields.io/npm/dw/go-ios?style=flat-square)](https://npmjs.org/package/go-ios)
-
-<img src="logo.png" width="256"/>
-
-Welcome 👋
-
-`npm install -g go-ios` can be used to get going. Run `ios --help` after the installation for details.
-For iOS 17+ devices you need to run `sudo ios tunnel start` for go ios to work. This will start a tunnel daemon.
-To make this work on Windows, download the latest wintun.dll from here `https://git.zx2c4.com/wintun` and copy it to `C:/Windows/system32`
-
-The goal of this project is to provide a stable and production ready opensource solution to automate iOS device on Linux, Windows and Mac OS X. I am delighted to announce that a few companies including [headspin.io](https://www.headspin.io/) and [Sauce Labs](https://saucelabs.com/) will use or are using go-iOS.
-
-Follow my twitter for updates or check out my medium blog: https://daniel-paulus.medium.com/
-
-If you are interested in using go-iOS please get in touch on LinkedIn, Twitter or the Github discussions above, I always love to hear what people are doing with it.
-
-If you miss something your Mac can do but go-iOS can't, just request a feature in the issues tab.
-
-# New REST-API
-
-Go-iOS is getting an experimental REST-API check it out [https://github.com/danielpaulus/go-ios/tree/main/restapi](https://github.com/danielpaulus/go-ios/tree/main/restapi)
-
-# Design principles:
-
-1. Using golang to compile static, small and fast binaries for all platforms very easily.
-
-   _Build Manual_: Install golang and run `go build`
-
-2. All output as JSON so you can easily use go-iOS from any other programming language
-3. Everything is a module, you can use go-iOS in golang projects as a module dependency easily
-
-# Features:
-
-Most notable:
-
-- Install apps zipped as ipa or unzipped from their .app folder `ios install --path=/path/to/app`
-- Run XCTests including WebdriverAgent on Linux, Windows and Mac
-- Start and Stop apps
-- Use a debug proxy to reverse engineer every tool Mac OSX has, so you can contrib to go-ios or build your own
-- Pair devices without manual tapping on a popup
-- Install developer images automatically by running `ios image auto`
-- Set thermal states and network emulation on the device with the `ios devicestate` command
-
-Help:
-
-```bash
-ios --help
-ios help <command>
-ios <command> --help
-```
-
-<!-- help begin -->
-
-```text
 go-ios local-build
 
 Cross-platform iOS automation CLI.
@@ -155,6 +97,3 @@ Commands:
   zoom                       Manage Zoom state.
 
 Run 'ios help <command>' or 'ios <command> --help' for command details.
-```
-
-<!-- help end -->
