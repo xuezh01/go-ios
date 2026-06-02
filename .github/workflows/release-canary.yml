@@ -1,27 +1,20 @@
-on:
-  # Release only when a PR is merged to main with the "make-release" label.
-  pull_request:
-    types: [closed]
+# Canary release pipeline. Mirrors release.yml's 3-stage build chain end-to-end,
+# but publishes to the throwaway `go-ios-canary` npm package instead of `go-ios`.
+# Use this to validate the release/OIDC publish process WITHOUT shipping a real
+# release. Triggered manually from the Actions tab.
+#
+# One-time setup on npmjs.com: create the `go-ios-canary` package's first version
+# (or register the trusted publisher on the package settings) pointing at:
+#   repo: danielpaulus/go-ios   workflow: release-canary.yml
+on: [workflow_dispatch]
 
-name: Release-Go-iOS
+name: Release-Canary
+
 jobs:
   build_on_windows:
-    # Gate the whole release chain: merged + labeled. The downstream jobs depend
-    # on this one, so skipping it here skips the entire release.
-    if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'make-release')
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v3
-        with:
-          ref: ${{ github.event.pull_request.base.ref }}
-
-      - name: Create Release
-        id: create_release
-        uses: zendesk/action-create-release@v3
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_schema: semantic
 
       - name: Install Go
         uses: actions/setup-go@v3
@@ -31,11 +24,10 @@ jobs:
 
       - name: Build
         run: |
-          ((Get-Content -path main.go -Raw) -replace "local-build","${{ steps.create_release.outputs.current_tag }}") | Set-Content -Path main.go
+          ((Get-Content -path main.go -Raw) -replace "local-build","0.0.${{ github.run_number }}") | Set-Content -Path main.go
           mkdir bin
           go build -ldflags="-s -w" -o bin/ios.exe
-          "${{ steps.create_release.outputs.current_tag }}" | Out-File -Encoding utf8NoBOM release_tag -NoNewline
-          Compress-Archive -Path .\bin\ios.exe, release_tag -CompressionLevel Optimal -DestinationPath go-ios-windows.zip
+          Compress-Archive -Path .\bin\ios.exe -CompressionLevel Optimal -DestinationPath go-ios-windows.zip
 
       - name: upload the windows build
         uses: actions/upload-artifact@v4
@@ -50,8 +42,6 @@ jobs:
     needs: build_on_windows
     steps:
       - uses: actions/checkout@v3
-        with:
-          ref: ${{ github.event.pull_request.base.ref }}
 
       - name: Install Go
         uses: actions/setup-go@v3
@@ -59,23 +49,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Download win release from previous job
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-build
-          path: ./win-bin
-
-      - name: Extract release tag
-        working-directory: ./win-bin
-        run: |
-          unzip go-ios-windows.zip
-          echo "release_tag="$(cat release_tag) >> $GITHUB_ENV
-
       - name: Build
         run: |
           brew install gnu-sed
-          alias sed=gsed
-          gsed -i 's/version \= \"local-build\"/version = \"${{ env.release_tag }}\"/' main.go
+          gsed -i 's/version \= \"local-build\"/version = \"0.0.${{ github.run_number }}\"/' main.go
           mkdir bin
           GOARCH=arm64 go build -ldflags="-s -w" -o bin/ios-arm64
           GOARCH=amd64 go build -ldflags="-s -w" -o bin/ios-amd64
@@ -90,20 +67,15 @@ jobs:
           retention-days: 1
           overwrite: true
 
-  build_on_linux_and_release:
+  build_on_linux_and_publish:
     runs-on: ubuntu-latest
     needs: build_on_mac
     permissions:
-      # contents: write is needed to upload the release assets below. Declaring a
-      # permissions block opts out of the default token scopes, so we must list it
-      # explicitly. id-token: write lets the job mint an OIDC token for npm
-      # trusted publishing (no long-lived npm token required).
-      contents: write
+      # id-token: write lets the job mint an OIDC token for npm trusted
+      # publishing. No contents: write here — canary does not cut a GitHub release.
       id-token: write
     steps:
       - uses: actions/checkout@v3
-        with:
-          ref: ${{ github.event.pull_request.base.ref }}
 
       - name: Install Go
         uses: actions/setup-go@v3
@@ -111,49 +83,34 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Download mac release from previous job
+      - name: Download mac build from previous job
         uses: actions/download-artifact@v4
         with:
           name: macos-build
           path: ./mac-bin
 
-      - name: Download and package mac binary
+      - name: Unpack mac binary
         working-directory: ./mac-bin
         run: |
           unzip go-ios-mac.zip
-          rm go-ios-mac.zip
-          zip -j go-ios-mac.zip ios
 
-      - name: Download windows release from previous job
+      - name: Download windows build from previous job
         uses: actions/download-artifact@v4
         with:
           name: windows-build
           path: ./win-bin
 
-      - name: Download and package windows binary
+      - name: Unpack windows binary
         working-directory: ./win-bin
         run: |
           unzip go-ios-windows.zip
-          echo "release_tag="$(cat release_tag) >> $GITHUB_ENV
-          rm go-ios-windows.zip
-          zip -j go-ios-win.zip ios.exe
 
-      - name: Build
+      - name: Build linux
         run: |
-          sed -i 's/version \= \"local-build\"/version = \"${{ env.release_tag }}\"/' main.go
+          sed -i 's/version \= \"local-build\"/version = \"0.0.${{ github.run_number }}\"/' main.go
           mkdir bin
           GOARCH=arm64 go build -ldflags="-s -w" -o bin/ios-arm64
           GOARCH=amd64 go build -ldflags="-s -w" -o bin/ios-amd64
-
-          cp ./mac-bin/go-ios-mac.zip .
-          cp ./win-bin/go-ios-win.zip .
-          zip -j go-ios-linux.zip bin/ios-arm64 bin/ios-amd64
-
-      - uses: AButler/upload-release-assets@v2.0
-        with:
-          files: "*.zip"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          release-tag: ${{ env.release_tag }}
 
       # OIDC trusted publishing needs Node >= 22.14.0 and npm >= 11.5.1.
       - name: Set up Node
@@ -162,7 +119,7 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
-      - name: Publish NPM
+      - name: Publish canary NPM
         run: |
           npm install -g npm@latest
           mkdir ./npm_publish/dist
@@ -178,7 +135,9 @@ jobs:
           cp ./bin/ios-arm64 ./npm_publish/dist/go-ios-linux-arm64_linux_arm64/ios
           cp ./README.md ./npm_publish
           cd npm_publish
-          sed -i 's/\"local-build\"/\"${{ env.release_tag }}\"/' package.json
+          # Retarget to the throwaway canary package + a unique version per run.
+          sed -i 's/"name": "go-ios"/"name": "go-ios-canary"/' package.json
+          sed -i 's/"local-build"/"0.0.${{ github.run_number }}"/' package.json
           npm install
           # No NODE_AUTH_TOKEN / .npmrc auth line: npm authenticates via OIDC
           # trusted publishing. Setting an (even empty) token would break OIDC.
