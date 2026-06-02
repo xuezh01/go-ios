@@ -65,3 +65,13 @@ jobs:
 
       - name: Verify code formatting
         run: test -z "$(gofmt -l .)"
+
+  # Run the real-device e2e suite only after all unit jobs pass. It runs on the
+  # self-hosted device runners; for fork PRs GitHub requires a maintainer to
+  # approve the run before it executes on those runners.
+  real-device:
+    name: Real device tests
+    needs: [lint, test_on_windows, test_on_linux]
+    uses: ./.github/workflows/real-device.yml
+    permissions:
+      contents: read

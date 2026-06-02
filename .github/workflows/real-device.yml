@@ -1,4 +1,7 @@
 on:
+  # Reusable: called by the Unit tests workflow after the unit jobs pass.
+  workflow_call:
+  # Also runnable on its own (e.g. against a branch or main).
   workflow_dispatch:
 
 name: CI Real Device Test
