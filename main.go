@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/pkcs12"
-	"golang.org/x/sys/unix"
+	"golang.org/x/term"
 
 	"github.com/danielpaulus/go-ios/ios/debugproxy"
 	"github.com/danielpaulus/go-ios/ios/deviceinfo"
@@ -2832,8 +2832,9 @@ func colorForLevel(level ostrace.LogLevel) string {
 }
 
 func isTerminal(fd int) bool {
-	_, err := unix.IoctlGetTermios(fd, unix.TCGETS)
-	return err == nil
+	// golang.org/x/term is cross-platform (Linux/macOS/BSD/Windows), unlike a
+	// raw unix.TCGETS ioctl which only builds on Linux.
+	return term.IsTerminal(fd)
 }
 
 func formatEntryPlain(entry ostrace.LogEntry) string {
