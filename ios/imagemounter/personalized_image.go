@@ -10,7 +10,7 @@ import (
 )
 
 type buildManifest struct {
-	ProductBuildVersion string          `plist:"ProductBuildVersion"`
+	ProductBuildVersion string `plist:"ProductBuildVersion"`
 	BuildIdentities     []buildIdentity
 }
 
@@ -50,8 +50,8 @@ type manifestEntry struct {
 }
 
 type buildIdentity struct {
-	BoardID  string                   `plist:"ApBoardID"`
-	ChipID   string                   `plist:"ApChipID"`
+	BoardID  string `plist:"ApBoardID"`
+	ChipID   string `plist:"ApChipID"`
 	Manifest map[string]manifestEntry
 }
 
