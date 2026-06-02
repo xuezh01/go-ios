@@ -1,14 +1,19 @@
 on:
-  push:
-    branches:
-      - main
+  # Release only when a PR is merged to main with the "make-release" label.
+  pull_request:
+    types: [closed]
 
 name: Release-Go-iOS
 jobs:
   build_on_windows:
+    # Gate the whole release chain: merged + labeled. The downstream jobs depend
+    # on this one, so skipping it here skips the entire release.
+    if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'make-release')
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
 
       - name: Create Release
         id: create_release
@@ -45,6 +50,8 @@ jobs:
     needs: build_on_windows
     steps:
       - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
 
       - name: Install Go
         uses: actions/setup-go@v3
@@ -88,6 +95,8 @@ jobs:
     needs: build_on_mac
     steps:
       - uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
 
       - name: Install Go
         uses: actions/setup-go@v3
