@@ -1,6 +1,13 @@
 on:
-  # Reusable: called by the Unit tests workflow after the unit jobs pass.
+  # Reusable: called by the Unit tests workflow after the unit jobs pass, and by
+  # the comment-triggered workflow for fork PRs (with an explicit ref).
   workflow_call:
+    inputs:
+      ref:
+        description: Git ref or SHA to check out (e.g. refs/pull/<n>/merge). Empty = the triggering ref.
+        type: string
+        required: false
+        default: ''
   # Also runnable on its own (e.g. against a branch or main).
   workflow_dispatch:
 
@@ -28,6 +35,8 @@ jobs:
     runs-on: [self-hosted, "${{ matrix.os }}"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Install Go
         uses: actions/setup-go@v5
