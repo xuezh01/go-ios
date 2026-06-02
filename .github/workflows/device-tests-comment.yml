@@ -1,0 +1,73 @@
+on:
+  issue_comment:
+    types: [created]
+
+name: Device tests (/test-devices)
+
+# Lets a maintainer run the real-device e2e suite on a fork PR by commenting
+# "/test-devices". The run executes in this repo's trusted context (so it gets
+# the device repo vars and the self-hosted runners) but only after an explicit
+# command from someone with write access — fork code never runs unreviewed.
+
+permissions:
+  contents: read
+
+jobs:
+  authorize:
+    name: Authorize
+    # Only PR comments that start with the command, from a trusted author.
+    if: >-
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/test-devices') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Acknowledge the command
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket',
+            });
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `🧪 Running real-device tests on PR #${context.issue.number} — [run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}).`,
+            });
+
+  real-device:
+    needs: authorize
+    uses: ./.github/workflows/real-device.yml
+    # Test the PR's merge ref (the fork's code merged into the base).
+    with:
+      ref: refs/pull/${{ github.event.issue.number }}/merge
+    permissions:
+      contents: read
+
+  report:
+    needs: [authorize, real-device]
+    if: always() && needs.authorize.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const ok = '${{ needs.real-device.result }}' === 'success';
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: ok
+                ? '✅ Real-device tests passed.'
+                : `❌ Real-device tests failed — [see run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}).`,
+            });
