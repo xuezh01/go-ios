@@ -92,7 +92,12 @@ const (
 	imageFile     = "DeveloperDiskImage.dmg"
 	signatureFile = "DeveloperDiskImage.dmg.signature"
 	devicebox     = "https://deviceboxhq.com/"
-	xcode15_4_ddi = "ddi-15F31d"
+	// personalizedDDI is the iOS 17+ universal personalized developer disk image.
+	// One image works for every iOS 17+ device and chip; it is personalized per
+	// device at mount time via Apple TSS. Hosted on deviceboxhq (a CDN); the
+	// versioned filename keeps the local cache deterministic. Bump this when a
+	// newer DDI is published (was ddi-15F31d).
+	personalizedDDI = "ddi-17E5179g"
 )
 
 func MatchAvailable(version string) string {
@@ -122,19 +127,10 @@ func MatchAvailable(version string) string {
 }
 
 func Download17Plus(baseDir string, version *semver.Version) (string, error) {
-	restoreDir, err := downloadPersonalizedDDI(baseDir)
-	if err != nil {
-		log.Warnf("GitHub DDI download failed: %v, falling back to deviceboxhq.com", err)
-		return download17PlusDevicebox(baseDir, version)
-	}
-	return restoreDir, nil
-}
-
-func download17PlusDevicebox(baseDir string, version *semver.Version) (string, error) {
-	downloadUrl := fmt.Sprintf("%s%s%s", devicebox, xcode15_4_ddi, ".zip")
+	downloadUrl := fmt.Sprintf("%s%s%s", devicebox, personalizedDDI, ".zip")
 	log.Infof("device iOS version: %s, getting developer image: %s", version.String(), downloadUrl)
 
-	imageDownloaded, err := validateBaseDirAndLookForImage(baseDir, xcode15_4_ddi)
+	imageDownloaded, err := validateBaseDirAndLookForImage(baseDir, personalizedDDI)
 	if err != nil {
 		return "", err
 	}
@@ -142,15 +138,13 @@ func download17PlusDevicebox(baseDir string, version *semver.Version) (string, e
 		log.Infof("using already downloaded image: %s", imageDownloaded)
 		return path.Join(imageDownloaded, "Restore"), err
 	}
-	imageFileName := path.Join(baseDir, xcode15_4_ddi+".zip")
-	extractedPath := path.Join(baseDir, xcode15_4_ddi)
+	imageFileName := path.Join(baseDir, personalizedDDI+".zip")
+	extractedPath := path.Join(baseDir, personalizedDDI)
 	log.Infof("downloading '%s' to path '%s'", downloadUrl, imageFileName)
-	err = downloadFile(imageFileName, downloadUrl)
-	if err != nil {
+	if err = downloadFile(imageFileName, downloadUrl); err != nil {
 		return "", err
 	}
-	_, _, err = ios.Unzip(imageFileName, extractedPath)
-	if err != nil {
+	if _, _, err = ios.Unzip(imageFileName, extractedPath); err != nil {
 		return "", fmt.Errorf("Download17Plus: error extracting image %s %w", imageFileName, err)
 	}
 
