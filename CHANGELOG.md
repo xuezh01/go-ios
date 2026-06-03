@@ -3,12 +3,18 @@
 All notable user-facing and internal changes to go-ios are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-The release workflow publishes the **top released version section** below as the
-GitHub release notes, so add a new `## [x.y.z] - YYYY-MM-DD` section (newest
-first, just under `[Unreleased]`) in the PR that carries the `make-release`
-label. Move anything accumulated under `[Unreleased]` into that section.
+
+Releases are cut by dispatching the **Release-Go-iOS** workflow (Actions tab →
+Run workflow, or `gh workflow run release.yml -f release_notes=... -f bump=patch`).
+That workflow computes the next version, writes a new `## [x.y.z] - DATE` section
+here from the notes you provide, and uses the same text as the GitHub release
+body — so this file is updated automatically and never needs a manual PR.
+Use `## [Unreleased]` to jot down notable changes between releases if you like.
 
 ## [Unreleased]
+
+### 🐛 Fixes
+- **REST API `KillApp`** — fixed kill-by-bundle-ID, which stopped matching after `CFBundleIdentifier`/`CFBundleExecutable` became method calls on the app model. (#729)
 
 ## [1.0.217] - 2026-06-03
 
