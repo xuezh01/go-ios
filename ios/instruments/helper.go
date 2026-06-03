@@ -6,9 +6,11 @@ import (
 
 	"github.com/danielpaulus/go-ios/ios"
 	dtx "github.com/danielpaulus/go-ios/ios/dtx_codec"
+	"github.com/danielpaulus/go-ios/ios/golog"
 	"github.com/danielpaulus/go-ios/ios/nskeyedarchiver"
-	log "github.com/sirupsen/logrus"
 )
+
+const logModule = "go-ios/instruments"
 
 const (
 	serviceName      string = "com.apple.instruments.remoteserver"
@@ -22,7 +24,7 @@ type loggingDispatcher struct {
 
 func (p loggingDispatcher) Dispatch(m dtx.Message) {
 	dtx.SendAckIfNeeded(p.conn, m)
-	log.Debug(m)
+	golog.Debug("dispatch message", "module", logModule, "message", m)
 }
 
 func connectInstrumentsWithMsgDispatcher(device ios.DeviceEntry, dispatcher dtx.Dispatcher) (*dtx.Connection, error) {
@@ -31,19 +33,19 @@ func connectInstrumentsWithMsgDispatcher(device ios.DeviceEntry, dispatcher dtx.
 		return nil, err
 	}
 	dtxConn.MessageDispatcher = dispatcher
-	log.Debugf("msg dispatcher: %v attached to instruments connection", reflect.TypeOf(dispatcher))
+	golog.Debug("msg dispatcher attached to instruments connection", "module", logModule, "udid", device.Properties.SerialNumber, "dispatcher", reflect.TypeOf(dispatcher))
 
 	return dtxConn, nil
 }
 
 func connectInstruments(device ios.DeviceEntry) (*dtx.Connection, error) {
 	if device.SupportsRsd() {
-		log.Debugf("Connecting to %s", serviceNameRsd)
+		golog.Debug("connecting to service", "module", logModule, "udid", device.Properties.SerialNumber, "service", serviceNameRsd)
 		return dtx.NewTunnelConnection(device, serviceNameRsd)
 	}
 	dtxConn, err := dtx.NewUsbmuxdConnection(device, serviceName)
 	if err != nil {
-		log.Debugf("Failed connecting to %s, trying %s", serviceName, serviceNameiOS14)
+		golog.Debug("failed connecting to service, trying fallback", "module", logModule, "udid", device.Properties.SerialNumber, "service", serviceName, "fallback", serviceNameiOS14)
 		dtxConn, err = dtx.NewUsbmuxdConnection(device, serviceNameiOS14)
 		if err != nil {
 			return nil, err

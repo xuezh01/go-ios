@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"io"
 
-	log "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/pkcs12"
 
 	ios "github.com/danielpaulus/go-ios/ios"
+	"github.com/danielpaulus/go-ios/ios/golog"
 )
+
+const logModule = "go-ios/mcinstall"
 
 const serviceName string = "com.apple.mobile.MCInstall"
 
@@ -298,7 +300,7 @@ func (mcInstallConn *Connection) addProfile(profilePlist []byte, installcmd stri
 	if checkStatus(plist) {
 		return nil
 	}
-	log.Errorf("received add response %+v", plist)
+	golog.Error("received add response", "module", logModule, "installcmd", installcmd, "response", plist)
 	return fmt.Errorf("add failed")
 }
 
@@ -320,7 +322,7 @@ func (mcInstallConn *Connection) RemoveProfile(identifier string) error {
 	if checkStatus(plist) {
 		return nil
 	}
-	log.Errorf("received remove response %+v", plist)
+	golog.Error("received remove response", "module", logModule, "identifier", identifier, "response", plist)
 	return fmt.Errorf("remove failed")
 }
 

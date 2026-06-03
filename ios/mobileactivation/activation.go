@@ -6,8 +6,10 @@ import (
 	"strings"
 
 	"github.com/danielpaulus/go-ios/ios"
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 )
+
+const logModule = "go-ios/mobileactivation"
 
 const serviceName string = "com.apple.mobileactivationd"
 
@@ -64,7 +66,7 @@ func Activate(device ios.DeviceEntry) error {
 		return err
 	}
 	if isActivated {
-		log.WithField("udid", device.Properties.SerialNumber).Info("the device is already activated")
+		golog.Info("the device is already activated", "module", logModule, "udid", device.Properties.SerialNumber)
 		return nil
 	}
 	conn, err := New(device)
@@ -76,13 +78,13 @@ func Activate(device ios.DeviceEntry) error {
 	if err != nil {
 		return err
 	}
-	log.Debugf("CreateTunnel1SessionInfoRequest resp: %v", resp)
+	golog.Debug("CreateTunnel1SessionInfoRequest response", "module", logModule, "udid", device.Properties.SerialNumber, "response", resp)
 	val := resp["Value"].(map[string]interface{})
 
 	handshakeRequestMessage := val["HandshakeRequestMessage"].([]byte)
-	log.Debugf("HandshakeRequestMessage: %v", handshakeRequestMessage)
+	golog.Debug("handshake request message", "module", logModule, "udid", device.Properties.SerialNumber, "value", handshakeRequestMessage)
 	stringPlist := ios.ToPlist(val)
-	log.Infof("sending %d bytes via http to the handshake server..", len(stringPlist))
+	golog.Info("sending bytes via http to the handshake server", "module", logModule, "udid", device.Properties.SerialNumber, "count", len(stringPlist))
 	header, body, err := sendHandshakeRequest(strings.NewReader(stringPlist))
 	var handshakeResponse []byte
 	if body != nil {
@@ -95,9 +97,9 @@ func Activate(device ios.DeviceEntry) error {
 		return err
 	}
 	defer body.Close()
-	log.Debugf("handshare response headers: %v", header)
-	log.Debugf("rcv %d bytes handshake response", len(handshakeResponse))
-	log.Infof("ok")
+	golog.Debug("handshake response headers", "module", logModule, "udid", device.Properties.SerialNumber, "value", header)
+	golog.Debug("received handshake response", "module", logModule, "udid", device.Properties.SerialNumber, "count", len(handshakeResponse))
+	golog.Info("ok", "module", logModule, "udid", device.Properties.SerialNumber)
 	// get activation info from device
 
 	conn1, err := New(device)
@@ -119,10 +121,10 @@ func Activate(device ios.DeviceEntry) error {
 	params := url.Values{}
 	params.Add("activation-info", activationResponsePlist)
 	payload := params.Encode()
-	log.Info("sending activation info")
+	golog.Info("sending activation info", "module", logModule, "udid", device.Properties.SerialNumber)
 
 	headers, body, err := sendActivationRequest(strings.NewReader(payload))
-	log.Debugf("activation response headers:%v", headers)
+	golog.Debug("activation response headers", "module", logModule, "udid", device.Properties.SerialNumber, "value", headers)
 	activationHttpResponse := []byte{}
 
 	if body != nil {
@@ -130,12 +132,12 @@ func Activate(device ios.DeviceEntry) error {
 		if err != nil {
 			return err
 		}
-		log.Debugf("activation http response: %s", activationHttpResponse)
+		golog.Debug("activation http response", "module", logModule, "udid", device.Properties.SerialNumber, "response", activationHttpResponse)
 	}
 	if err != nil {
 		return err
 	}
-	log.Info("activation response received")
+	golog.Info("activation response received", "module", logModule, "udid", device.Properties.SerialNumber)
 
 	// Technically HTTP Headers are not a map String, String but a map String, []String because
 	// Headers can appear multiple times. F.ex.
@@ -161,8 +163,8 @@ func Activate(device ios.DeviceEntry) error {
 	if err != nil {
 		return err
 	}
-	log.Debugf("activation Response Plist: %v", activationResponseMap)
-	log.Info("storing activation response to device")
+	golog.Debug("activation response plist", "module", logModule, "udid", device.Properties.SerialNumber, "response", activationResponseMap)
+	golog.Info("storing activation response to device", "module", logModule, "udid", device.Properties.SerialNumber)
 	resp, err = conn2.sendAndReceive(map[string]interface{}{
 		"Command": "HandleActivationInfoWithSessionRequest",
 		"Value":   activationHttpResponse, "ActivationResponseHeaders": activationResponseHeaders,
@@ -170,8 +172,8 @@ func Activate(device ios.DeviceEntry) error {
 	if err != nil {
 		return err
 	}
-	log.Debugf("HandleActivationInfoWithSessionRequest response: %v", resp)
-	log.Info("device successfully activated")
+	golog.Debug("HandleActivationInfoWithSessionRequest response", "module", logModule, "udid", device.Properties.SerialNumber, "response", resp)
+	golog.Info("device successfully activated", "module", logModule, "udid", device.Properties.SerialNumber)
 	return nil
 }
 

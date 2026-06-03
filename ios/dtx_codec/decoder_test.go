@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	dtx "github.com/danielpaulus/go-ios/ios/dtx_codec"
+	"github.com/danielpaulus/go-ios/ios/golog"
 	"github.com/danielpaulus/go-ios/ios/nskeyedarchiver"
-	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -41,7 +41,7 @@ func TestLZ4CompressedDtxMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	log.Infof("%v", fixtureMsg)
+	golog.Info("decoded fixture message", "module", "go-ios/dtx_codec", "message", fixtureMsg)
 	assert.NoError(t, err)
 }
 
@@ -75,7 +75,7 @@ func TestCodec(t *testing.T) {
 	remainingBytes = dat
 	for len(remainingBytes) > 0 {
 		msg, s, err := dtx.DecodeNonBlocking(remainingBytes)
-		log.Info(msg.StringDebug())
+		golog.Info(msg.StringDebug(), "module", "go-ios/dtx_codec")
 		remainingBytes = s
 		if !assert.NoError(t, err) {
 			t.Fatal("whet", err)
@@ -99,7 +99,7 @@ func TestAXDump(t *testing.T) {
 	remainingBytes = dat
 	for len(remainingBytes) > 0 {
 		msg, s, err := dtx.DecodeNonBlocking(remainingBytes)
-		log.Info(msg)
+		golog.Info("decoded message", "module", "go-ios/dtx_codec", "message", msg)
 		remainingBytes = s
 		if !assert.NoError(t, err) {
 			t.Fatal("whet", err)
@@ -119,7 +119,7 @@ func TestType1Message(t *testing.T) {
 	remainingBytes = dat
 	for len(remainingBytes) > 0 {
 		msg, s, err := dtx.DecodeNonBlocking(remainingBytes)
-		log.Info(msg)
+		golog.Info("decoded message", "module", "go-ios/dtx_codec", "message", msg)
 		remainingBytes = s
 		if !assert.NoError(t, err) {
 			t.Fatal("whet", err)

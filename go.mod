@@ -14,7 +14,6 @@ require (
 	github.com/pierrec/lz4 v2.6.1+incompatible
 	github.com/pkg/errors v0.9.1
 	github.com/quic-go/quic-go v0.40.1-0.20231203135336-87ef8ec48d55
-	github.com/sirupsen/logrus v1.9.3
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/stretchr/testify v1.7.0
 	github.com/tadglines/go-pkgs v0.0.0-20210623144937-b983b20f54f9

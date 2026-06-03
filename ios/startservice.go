@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 	plist "howett.net/plist"
 )
 
@@ -47,7 +47,7 @@ func (lockDownConn *LockDownConnection) StartService(serviceName string) (StartS
 	if response.Error != "" {
 		return StartServiceResponse{}, fmt.Errorf("Could not start service:%s with reason:'%s'. Have you mounted the Developer Image?", serviceName, response.Error)
 	}
-	log.WithFields(log.Fields{"Port": response.Port, "Request": response.Request, "Service": response.Service, "EnableServiceSSL": response.EnableServiceSSL}).Debug("Service started on device")
+	golog.Debug("Service started on device", "module", logModule, "service", serviceName, "Port", response.Port, "Request", response.Request, "Service", response.Service, "EnableServiceSSL", response.EnableServiceSSL)
 	return response, nil
 }
 

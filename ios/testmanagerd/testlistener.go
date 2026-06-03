@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/danielpaulus/go-ios/ios/golog"
 	"github.com/danielpaulus/go-ios/ios/nskeyedarchiver"
 	"github.com/google/uuid"
-	log "github.com/sirupsen/logrus"
 )
 
 // TestListener collects test results from the test execution
@@ -117,7 +117,7 @@ func (t *TestListener) testCaseFinished(testClass string, testMethod string, xcA
 		// This if block is a safe guard to auto correct the test case information
 		ts = t.runningTestSuite
 		if len(ts.TestCases) == 0 {
-			log.Debug(fmt.Sprintf("Received testCaseFinished for %s:%s without initialization", testClass, testMethod))
+			golog.Debug("Received testCaseFinished without initialization", "module", logModule, "testClass", testClass, "testMethod", testMethod)
 			return
 		}
 		testCase = &ts.TestCases[len(ts.TestCases)-1]
@@ -127,7 +127,7 @@ func (t *TestListener) testCaseFinished(testClass string, testMethod string, xcA
 		attachmentsPath := filepath.Join(t.attachmentsDirectory, uuid.New().String())
 		file, err := os.Create(attachmentsPath)
 		if err != nil {
-			log.WithFields(log.Fields{"error": err, "attachment": attachment.Name}).Warn("Received testCaseFinished with activity record but failed writing attachments to disk. Ignoring attachment")
+			golog.Warn("Received testCaseFinished with activity record but failed writing attachments to disk. Ignoring attachment", "module", logModule, "error", err, "attachment", attachment.Name)
 			continue
 		}
 		defer file.Close()
@@ -147,12 +147,12 @@ func (t *TestListener) testCaseFinished(testClass string, testMethod string, xcA
 func (t *TestListener) testSuiteDidStart(suiteName string, date string) {
 	d, err := time.Parse(time.DateTime+" +0000", date)
 	if err != nil {
-		log.WithFields(log.Fields{"error": err}).Warn("Cannot parse test suite start date")
+		golog.Warn("Cannot parse test suite start date", "module", logModule, "error", err)
 		d = time.Now()
 	}
 
 	if t.runningTestSuite != nil {
-		log.Warn("A new test suite starts running while another one is in progress, finalizing the previous one")
+		golog.Warn("A new test suite starts running while another one is in progress, finalizing the previous one", "module", logModule)
 		t.TestSuites = append(t.TestSuites, *t.runningTestSuite)
 	}
 
@@ -198,7 +198,7 @@ func (t *TestListener) testCaseDidStartForClass(testClass string, testMethod str
 func (t *TestListener) testCaseFailedForClass(testClass string, testMethod string, message string, file string, line uint64) {
 	testCase := t.findTestCase(testClass, testMethod)
 	if testCase == nil {
-		log.Warn("Received failure status for an unknown test, adding it to suite")
+		golog.Warn("Received failure status for an unknown test, adding it to suite", "module", logModule)
 		ts := t.findTestSuite(testClass)
 		ts.TestCases = append(ts.TestCases, TestCase{
 			ClassName:  testClass,
@@ -226,7 +226,7 @@ func (t *TestListener) testCaseDidFinishForTest(testClass string, testMethod str
 		d, err := time.ParseDuration(fmt.Sprintf("%f", duration) + "s")
 		if err != nil {
 			d = 0
-			log.WithFields(log.Fields{"error": err}).Warn("Failed parsing test case duration")
+			golog.Warn("Failed parsing test case duration", "module", logModule, "error", err)
 		}
 
 		testCase.Duration = d
@@ -236,13 +236,13 @@ func (t *TestListener) testCaseDidFinishForTest(testClass string, testMethod str
 func (t *TestListener) testSuiteFinished(suiteName string, date string, testCount uint64, failures uint64, skip uint64, expectedFailure uint64, unexpectedFailure uint64, uncaughtException uint64, testDuration float64, totalDuration float64) {
 	endDate, err := time.Parse(time.DateTime+" +0000", date)
 	if err != nil {
-		log.WithFields(log.Fields{"error": err}).Warn("Cannot parse test suite start date")
+		golog.Warn("Cannot parse test suite start date", "module", logModule, "error", err)
 		endDate = time.Now()
 	}
 
 	ts := t.findTestSuite(suiteName)
 	if ts == nil {
-		log.Debug(fmt.Sprintf("Received testSuiteFinished for %s without initialization", suiteName))
+		golog.Debug("Received testSuiteFinished without initialization", "module", logModule, "suiteName", suiteName)
 		return
 	}
 
@@ -250,14 +250,14 @@ func (t *TestListener) testSuiteFinished(suiteName string, date string, testCoun
 
 	d, err := time.ParseDuration(fmt.Sprintf("%f", testDuration) + "s")
 	if err != nil {
-		log.WithFields(log.Fields{"error": err}).Warn("Test duration cannot be parsed")
+		golog.Warn("Test duration cannot be parsed", "module", logModule, "error", err)
 		d = 0
 	}
 	ts.TestDuration = d
 
 	d, err = time.ParseDuration(fmt.Sprintf("%f", totalDuration) + "s")
 	if err != nil {
-		log.WithFields(log.Fields{"error": err}).Warn("Total duration cannot be parsed")
+		golog.Warn("Total duration cannot be parsed", "module", logModule, "error", err)
 		d = 0
 	}
 	ts.TotalDuration = d

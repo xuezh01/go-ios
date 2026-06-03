@@ -3,15 +3,19 @@ package notificationproxy
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
 	ios "github.com/danielpaulus/go-ios/ios"
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 	"howett.net/plist"
 )
 
-const serviceName = "com.apple.mobile.notification_proxy"
+const (
+	logModule   = "go-ios/notificationproxy"
+	serviceName = "com.apple.mobile.notification_proxy"
+)
 
 type Connection struct {
 	deviceConn          ios.DeviceConnectionInterface
@@ -24,15 +28,15 @@ type Connection struct {
 
 // Close sends a Shutdown command to notification proxy and closes the DeviceConnectionInterface
 func (c *Connection) Close() {
-	log.Debugf("shutting down %s", serviceName)
+	golog.Debug("shutting down", "module", logModule, "service", serviceName)
 	request := notificationProxyRequest{Command: "Shutdown"}
 	bytes, err := c.plistCodec.Encode(request)
 	if err != nil {
-		log.Debug(err)
+		golog.Debug("failed encoding shutdown request", "module", logModule, "service", serviceName, "error", err)
 	}
 	err = c.deviceConn.Send(bytes)
 	if err != nil {
-		log.Debug(err)
+		golog.Debug("failed sending shutdown request", "module", logModule, "service", serviceName, "error", err)
 	}
 	c.deviceConn.Close()
 }
@@ -61,7 +65,7 @@ func WaitUntilSpringboardStarted(device ios.DeviceEntry) error {
 }
 
 func read(c *Connection) error {
-	log.Debug("notificationproxy start reading")
+	golog.Debug("notificationproxy start reading", "module", logModule, "service", serviceName)
 	reader := c.deviceConn.Reader()
 	for {
 		messageBytes, err := c.plistCodec.Decode(reader)
@@ -72,7 +76,7 @@ func read(c *Connection) error {
 		if err != nil {
 			return err
 		}
-		log.Debugf("NotificationProxy: %+v", message)
+		golog.Debug("NotificationProxy message", "module", logModule, "service", serviceName, "message", message)
 		if command, ok := message["Command"].(string); ok {
 			switch command {
 			case "RelayNotification":
@@ -81,10 +85,10 @@ func read(c *Connection) error {
 				var signal interface{}
 				c.proxyDeathChannel <- signal
 			default:
-				log.Debugf("Unknown message: %x", messageBytes)
+				golog.Debug("unknown message", "module", logModule, "service", serviceName, "bytes", fmt.Sprintf("%x", messageBytes))
 			}
 		} else {
-			log.Debugf("Unknown message: %x", messageBytes)
+			golog.Debug("unknown message", "module", logModule, "service", serviceName, "bytes", fmt.Sprintf("%x", messageBytes))
 		}
 	}
 }

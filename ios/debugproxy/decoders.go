@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
 
 	dtx "github.com/danielpaulus/go-ios/ios/dtx_codec"
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 )
 
 type decoder interface {
@@ -22,7 +23,7 @@ type dtxDecoder struct {
 	binFilePath  string
 	buffer       bytes.Buffer
 	isBroken     bool
-	log          *log.Entry
+	log          *slog.Logger
 }
 
 type MessageWithMetaInfo struct {
@@ -33,7 +34,7 @@ type MessageWithMetaInfo struct {
 	Length       int
 }
 
-func NewDtxDecoder(jsonFilePath string, binFilePath string, log *log.Entry) decoder {
+func NewDtxDecoder(jsonFilePath string, binFilePath string, log *slog.Logger) decoder {
 	return &dtxDecoder{jsonFilePath: jsonFilePath, binFilePath: binFilePath, buffer: bytes.Buffer{}, isBroken: false, log: log}
 }
 
@@ -41,7 +42,7 @@ func (f *dtxDecoder) decode(data []byte) {
 	file, err := os.OpenFile(f.binFilePath+".raw",
 		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
-		log.Println(err)
+		golog.Info("failed opening raw dump file", "module", logModule, "binFilePath", f.binFilePath, "error", err)
 	}
 
 	file.Write(data)
@@ -63,8 +64,7 @@ func (f *dtxDecoder) decode(data []byte) {
 			break
 		}
 		if err != nil {
-			f.log.Errorf("Failed decoding DTX:%s, continuing bindumping", err)
-			f.log.Info(fmt.Sprintf("%x", slice))
+			f.log.Error("failed decoding DTX, continuing bindumping", "error", err, "bytes", fmt.Sprintf("%x", slice))
 			f.isBroken = true
 		}
 		slice = remainingbytes
@@ -72,7 +72,7 @@ func (f *dtxDecoder) decode(data []byte) {
 		file, err := os.OpenFile(f.binFilePath,
 			os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
-			log.Println(err)
+			golog.Info("failed opening bin file", "module", logModule, "binFilePath", f.binFilePath, "error", err)
 		}
 		s, _ := file.Stat()
 		offset := s.Size()
@@ -82,7 +82,7 @@ func (f *dtxDecoder) decode(data []byte) {
 		file, err = os.OpenFile(f.jsonFilePath,
 			os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
-			log.Println(err)
+			golog.Info("failed opening json file", "module", logModule, "jsonFilePath", f.jsonFilePath, "error", err)
 		}
 
 		type Alias dtx.Message
@@ -102,10 +102,10 @@ func (f *dtxDecoder) decode(data []byte) {
 
 		mylog := f.log
 		if strings.Contains(f.binFilePath, "from-device") {
-			mylog = f.log.WithFields(log.Fields{"d": "in"})
+			mylog = f.log.With("d", "in")
 		}
 		if strings.Contains(f.binFilePath, "to-device") {
-			mylog = f.log.WithFields(log.Fields{"d": "out"})
+			mylog = f.log.With("d", "out")
 		}
 		logDtxMessageNice(mylog, msg)
 		jsonmsg, err := json.Marshal(jsonMetaInfo)
@@ -117,36 +117,44 @@ func (f *dtxDecoder) decode(data []byte) {
 	}
 }
 
-func logDtxMessageNice(log *log.Entry, msg dtx.Message) {
+func logDtxMessageNice(log *slog.Logger, msg dtx.Message) {
 	if msg.PayloadHeader.MessageType == dtx.Methodinvocation {
 		expectsReply := ""
 		if msg.ExpectsReply {
 			expectsReply = "e"
 		}
-		log.Infof("%d.%d%s c%d %s %s", msg.Identifier, msg.ConversationIndex, expectsReply, msg.ChannelCode, msg.Payload[0], msg.Auxiliary)
+		log.Info("dtx method invocation",
+			"identifier", msg.Identifier, "conversationIndex", msg.ConversationIndex,
+			"expectsReply", expectsReply, "channelCode", msg.ChannelCode,
+			"method", msg.Payload[0], "auxiliary", msg.Auxiliary)
 		return
 	}
 	if msg.PayloadHeader.MessageType == dtx.Ack {
-		log.Infof("%d.%d c%d Ack", msg.Identifier, msg.ConversationIndex, msg.ChannelCode)
+		log.Info("dtx ack",
+			"identifier", msg.Identifier, "conversationIndex", msg.ConversationIndex, "channelCode", msg.ChannelCode)
 		return
 	}
 	if msg.PayloadHeader.MessageType == dtx.UnknownTypeOne {
 		if len(msg.Payload) > 0 {
-			log.Infof("type1 with payload: %x", msg.Payload[0])
+			log.Info("dtx type1 with payload", "payload", fmt.Sprintf("%x", msg.Payload[0]))
 			return
 		}
-		log.Infof("type1 without payload: %+v", msg)
+		log.Info("dtx type1 without payload", "message", fmt.Sprintf("%+v", msg))
 		return
 	}
 	if msg.PayloadHeader.MessageType == dtx.ResponseWithReturnValueInPayload {
-		log.Infof("%d.%d c%d response: %s", msg.Identifier, msg.ConversationIndex, msg.ChannelCode, msg.Payload[0])
+		log.Info("dtx response",
+			"identifier", msg.Identifier, "conversationIndex", msg.ConversationIndex,
+			"channelCode", msg.ChannelCode, "response", msg.Payload[0])
 		return
 	}
 	if msg.PayloadHeader.MessageType == dtx.DtxTypeError {
-		log.Infof("%d.%d c%d error: %s", msg.Identifier, msg.ConversationIndex, msg.ChannelCode, msg.Payload[0])
+		log.Info("dtx error",
+			"identifier", msg.Identifier, "conversationIndex", msg.ConversationIndex,
+			"channelCode", msg.ChannelCode, "error", msg.Payload[0])
 		return
 	}
-	log.Infof("%+v", msg)
+	log.Info("dtx message", "message", fmt.Sprintf("%+v", msg))
 }
 
 type binaryOnlyDumper struct {
@@ -154,7 +162,7 @@ type binaryOnlyDumper struct {
 }
 
 // NewNoOpDecoder does nothing
-func NewBinDumpOnly(jsonFilePath string, dumpFilePath string, log *log.Entry) decoder {
+func NewBinDumpOnly(jsonFilePath string, dumpFilePath string, log *slog.Logger) decoder {
 	return binaryOnlyDumper{dumpFilePath}
 }
 

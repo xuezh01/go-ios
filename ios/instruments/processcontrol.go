@@ -6,7 +6,7 @@ import (
 
 	"github.com/danielpaulus/go-ios/ios"
 	dtx "github.com/danielpaulus/go-ios/ios/dtx_codec"
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 )
 
 type ProcessControl struct {
@@ -87,7 +87,7 @@ func (p ProcessControl) StartProcess(bundleID string, envVars map[string]interfa
 	// seems like the path does not matter
 	const path = "/private/"
 
-	log.WithFields(log.Fields{"channel_id": procControlChannel, "bundleID": bundleID}).Info("Launching process")
+	golog.Info("Launching process", "module", logModule, "channel_id", procControlChannel, "bundleID", bundleID)
 
 	msg, err := p.processControlChannel.MethodCall(
 		"launchSuspendedProcessWithDevicePath:bundleIdentifier:environment:arguments:options:",
@@ -97,14 +97,14 @@ func (p ProcessControl) StartProcess(bundleID string, envVars map[string]interfa
 		arguments,
 		options)
 	if err != nil {
-		log.WithFields(log.Fields{"channel_id": procControlChannel, "error": err}).Errorln("failed starting process: ", bundleID)
+		golog.Error("failed starting process", "module", logModule, "channel_id", procControlChannel, "error", err, "bundleID", bundleID)
 		return 0, err
 	}
 	if msg.HasError() {
 		return 0, fmt.Errorf("Failed starting process: %s, msg:%v", bundleID, msg.Payload[0])
 	}
 	if pid, ok := msg.Payload[0].(uint64); ok {
-		log.WithFields(log.Fields{"channel_id": procControlChannel, "pid": pid}).Info("Process started successfully")
+		golog.Info("Process started successfully", "module", logModule, "channel_id", procControlChannel, "pid", pid)
 		return pid, nil
 	}
 	return 0, fmt.Errorf("pid returned in payload was not of type uint64 for processcontroll.startprocess, instead: %s", msg.Payload)

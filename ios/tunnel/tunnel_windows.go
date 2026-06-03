@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"syscall"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 )
 
 // createSysProcAttr returns attributes for spawning the go-ios agent as a
@@ -45,14 +45,14 @@ func initTUNwrapper(device Device) *tunWrapper {
 	}
 
 	mtu, _ := t.device.MTU()
-	log.Infof("batch size: %d mtu:%d", device.BatchSize(), mtu)
+	golog.Info("tun wrapper initialized", "module", logModule, "batchSize", device.BatchSize(), "mtu", mtu)
 
 	t.buffer = make([][]byte, 1)
 	t.buffer[0] = make([]byte, mtu)
 	go func() {
 		for {
 			e := <-device.Events()
-			log.Infof("event: %v", e)
+			golog.Info("tun device event", "module", logModule, "event", e)
 		}
 	}()
 	return t
@@ -107,8 +107,7 @@ func setupTunnelInterface(tunnelInfo tunnelParameters) (io.ReadWriteCloser, erro
 	if err != nil {
 		return nil, fmt.Errorf("setupTunnelInterface: failed to set IP address for interface: %w", err)
 	}
-	log.Info("windows cmd")
-	log.Info(setIpAddr.String())
+	golog.Info("windows cmd", "module", logModule, "cmd", setIpAddr.String())
 
 	return initTUNwrapper(tunDevice), nil
 }

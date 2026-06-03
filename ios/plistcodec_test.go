@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	ios "github.com/danielpaulus/go-ios/ios"
+	"github.com/danielpaulus/go-ios/ios/golog"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -28,7 +28,7 @@ func TestPlistCodec(t *testing.T) {
 			if *update {
 				err := os.WriteFile(golden, []byte(actual), 0o644)
 				if err != nil {
-					log.Error(err)
+					golog.Error("failed writing golden file", "module", "go-ios", "error", err)
 					t.Fail()
 				}
 			}

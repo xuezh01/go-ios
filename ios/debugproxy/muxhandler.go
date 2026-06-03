@@ -2,22 +2,23 @@ package debugproxy
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 
 	ios "github.com/danielpaulus/go-ios/ios"
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 	"howett.net/plist"
 )
 
 func proxyUsbMuxConnection(p *ProxyConnection, muxOnUnixSocket *ios.UsbMuxConnection, muxToDevice *ios.UsbMuxConnection) {
 	defer func() {
-		log.Println("done") // Println executes normally even if there is a panic
+		golog.Info("done", "module", logModule, "id", p.id) // logged normally even if there is a panic
 		if x := recover(); x != nil {
-			log.Printf("run time panic, moving back socket %v", x)
+			golog.Info("run time panic, moving back socket", "module", logModule, "id", p.id, "panic", x)
 			err := MoveBack(ios.ToUnixSocketPath(ios.GetUsbmuxdSocket()))
 			if err != nil {
-				log.WithFields(log.Fields{"error": err}).Error("Failed moving back socket")
+				golog.Error("failed moving back socket", "module", logModule, "id", p.id, "error", err)
 			}
 			panic(x)
 		}
@@ -31,7 +32,7 @@ func proxyUsbMuxConnection(p *ProxyConnection, muxOnUnixSocket *ios.UsbMuxConnec
 				p.LogClosed()
 				return
 			}
-			p.log.Info("Failed reading UsbMuxMessage", err)
+			p.log.Info("failed reading usbmux message", "error", err)
 			return
 		}
 
@@ -39,11 +40,11 @@ func proxyUsbMuxConnection(p *ProxyConnection, muxOnUnixSocket *ios.UsbMuxConnec
 		decoder := plist.NewDecoder(bytes.NewReader(request.Payload))
 		err = decoder.Decode(&decodedRequest)
 		if err != nil {
-			p.log.Info("Failed decoding MuxMessage", request, err)
+			p.log.Info("failed decoding mux message", "request", request, "error", err)
 		}
 		p.logJSONMessageToDevice(map[string]interface{}{"header": request.Header, "payload": decodedRequest, "type": "USBMUX"})
 
-		p.log.WithFields(log.Fields{"ID": p.id, "direction": "host->device"}).Trace(decodedRequest)
+		p.log.With("ID", p.id, "direction", "host->device").Log(context.Background(), golog.LevelTrace, "usbmux request", "request", decodedRequest)
 		if decodedRequest["MessageType"] == "Connect" {
 			handleConnect(request, decodedRequest, p, muxOnUnixSocket, muxToDevice)
 			return
@@ -65,19 +66,19 @@ func proxyUsbMuxConnection(p *ProxyConnection, muxOnUnixSocket *ios.UsbMuxConnec
 
 		response, err := muxToDevice.ReadMessage()
 		if err != nil {
-			p.log.Error("Failed muxToDevice.ReadMessage()", request, err)
+			p.log.Error("failed muxToDevice.ReadMessage()", "request", request, "error", err)
 		}
 		var decodedResponse map[string]interface{}
 		decoder = plist.NewDecoder(bytes.NewReader(response.Payload))
 		err = decoder.Decode(&decodedResponse)
 		if err != nil {
-			p.log.Error("Failed decoding MuxMessage", decodedResponse, err)
+			p.log.Error("failed decoding mux message", "response", decodedResponse, "error", err)
 		}
 		p.logJSONMessageFromDevice(map[string]interface{}{"header": response.Header, "payload": decodedResponse, "type": "USBMUX"})
-		p.log.WithFields(log.Fields{"ID": p.id, "direction": "device->host"}).Trace(decodedResponse)
+		p.log.With("ID", p.id, "direction", "device->host").Log(context.Background(), golog.LevelTrace, "usbmux response", "response", decodedResponse)
 		err = muxOnUnixSocket.SendMuxMessage(response)
 		if err != nil {
-			p.log.Error("Failed muxOnUnixSocket.SendMuxMessage(response)", request, err)
+			p.log.Error("failed muxOnUnixSocket.SendMuxMessage(response)", "request", request, "error", err)
 		}
 	}
 }
@@ -88,7 +89,7 @@ func handleReadPairRecord(p *ProxyConnection, muxOnUnixSocket *ios.UsbMuxConnect
 	decoder := plist.NewDecoder(bytes.NewReader(response.Payload))
 	err = decoder.Decode(&decodedResponse)
 	if err != nil {
-		p.log.Info("Failed decoding MuxMessage", decodedResponse, err)
+		p.log.Info("failed decoding mux message", "response", decodedResponse, "error", err)
 	}
 	pairRecord := ios.PairRecordfromBytes(decodedResponse["PairRecordData"].([]byte))
 	pairRecord.DeviceCertificate = pairRecord.HostCertificate
@@ -97,7 +98,7 @@ func handleReadPairRecord(p *ProxyConnection, muxOnUnixSocket *ios.UsbMuxConnect
 	response.Payload = newPayload
 	response.Header.Length = uint32(len(newPayload) + 16)
 	p.logJSONMessageFromDevice(map[string]interface{}{"header": response.Header, "payload": decodedResponse, "type": "USBMUX"})
-	p.log.WithFields(log.Fields{"ID": p.id, "direction": "device->host"}).Trace(decodedResponse)
+	p.log.With("ID", p.id, "direction", "device->host").Log(context.Background(), golog.LevelTrace, "usbmux response", "response", decodedResponse)
 	err = muxOnUnixSocket.SendMuxMessage(response)
 }
 
@@ -113,14 +114,14 @@ func handleConnect(connectRequest ios.UsbMuxMessage, decodedConnectRequest map[s
 	}
 
 	if port == ios.Lockdownport {
-		p.log.Trace("Connect to Lockdown")
+		p.log.Log(context.Background(), golog.LevelTrace, "connect to lockdown")
 		handleConnectToLockdown(connectRequest, decodedConnectRequest, p, muxOnUnixSocket, muxToDevice)
 	} else {
 		info, err := p.debugProxy.retrieveServiceInfoByPort(ios.Ntohs(uint16(port)))
 		if err != nil {
 			panic(fmt.Sprintf("ServiceInfo for port: %d not found, this is a bug :-)reqheader: %+v repayload: %x", port, connectRequest.Header, connectRequest.Payload))
 		}
-		p.log.Infof("Connection to service '%s' detected on port %d", info.ServiceName, info.ServicePort)
+		p.log.Info("connection to service detected", "service", info.ServiceName, "port", info.ServicePort)
 		handleConnectToService(connectRequest, decodedConnectRequest, p, muxOnUnixSocket, muxToDevice, info)
 	}
 }
@@ -148,7 +149,7 @@ func handleListen(p *ProxyConnection, muxOnUnixSocket *ios.UsbMuxConnection, mux
 			p.LogClosed()
 			return
 		}
-		p.log.WithFields(log.Fields{"error": err}).Error("Unexpected error on read for LISTEN connection")
+		p.log.Error("unexpected error on read for LISTEN connection", "error", err)
 	}()
 
 	for {
@@ -171,13 +172,13 @@ func handleListen(p *ProxyConnection, muxOnUnixSocket *ios.UsbMuxConnection, mux
 		decoder := plist.NewDecoder(bytes.NewReader(response.Payload))
 		err = decoder.Decode(&decodedResponse)
 		if err != nil {
-			p.log.Info("Failed decoding MuxMessage", decodedResponse, err)
+			p.log.Info("failed decoding mux message", "response", decodedResponse, "error", err)
 		}
 		p.logJSONMessageFromDevice(map[string]interface{}{"header": response.Header, "payload": decodedResponse, "type": "USBMUX"})
-		p.log.WithFields(log.Fields{"ID": p.id, "direction": "device->host"}).Trace(decodedResponse)
+		p.log.With("ID", p.id, "direction", "device->host").Log(context.Background(), golog.LevelTrace, "usbmux response", "response", decodedResponse)
 		err = muxOnUnixSocket.SendMuxMessage(response)
 		if err != nil {
-			p.log.Info("Failed muxOnUnixSocket.SendMuxMessage(response)", decodedResponse, err)
+			p.log.Info("failed muxOnUnixSocket.SendMuxMessage(response)", "response", decodedResponse, "error", err)
 		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"strings"
@@ -12,8 +13,8 @@ import (
 
 	"github.com/danielpaulus/go-ios/ios"
 
+	"github.com/danielpaulus/go-ios/ios/golog"
 	"github.com/danielpaulus/go-ios/ios/nskeyedarchiver"
-	log "github.com/sirupsen/logrus"
 )
 
 type MethodWithResponse func(msg Message) (interface{}, error)
@@ -100,12 +101,12 @@ func NewGlobalDispatcher(requestChannelMessages chan Message, dtxConnection *Con
 func (dtxConn *Connection) Dispatch(msg Message) {
 	msgDispatcher := dtxConn.MessageDispatcher
 	if msgDispatcher != nil {
-		log.Debugf("msg dispatcher found: %T", msgDispatcher)
+		golog.Debug("msg dispatcher found", "module", logModule, "dispatcher", fmt.Sprintf("%T", msgDispatcher))
 		msgDispatcher.Dispatch(msg)
 		return
 	}
 
-	log.Errorf("no connection dispatcher registered for global channel, msg: %v", msg)
+	golog.Error("no connection dispatcher registered for global channel", "module", logModule, "msg", msg)
 }
 
 // Dispatch prints log messages and errors when they are received and also creates local Channels when requested by the device.
@@ -119,28 +120,24 @@ func (g GlobalDispatcher) Dispatch(msg Message) {
 		if "outputReceived:fromProcess:atTime:" == msg.Payload[0] {
 			args := msg.Auxiliary.GetArguments()
 			if len(args) < 3 {
-				log.Warnf("outputReceived:fromProcess:atTime: expected at least 3 arguments, got %d", len(args))
+				golog.Warn("outputReceived:fromProcess:atTime: expected at least 3 arguments", "module", logModule, "count", len(args))
 				return
 			}
 			logBytes, ok := args[0].([]byte)
 			if !ok {
-				log.Warnf("outputReceived:fromProcess:atTime: expected []byte argument, got %T", args[0])
+				golog.Warn("outputReceived:fromProcess:atTime: expected []byte argument", "module", logModule, "type", fmt.Sprintf("%T", args[0]))
 				return
 			}
 			logmsg, err := nskeyedarchiver.Unarchive(logBytes)
 			if err == nil {
-				log.WithFields(log.Fields{
-					"msg":  logmsg[0],
-					"pid":  args[1],
-					"time": args[2],
-				}).Debug("outputReceived:fromProcess:atTime:")
+				golog.Debug("outputReceived:fromProcess:atTime:", "module", logModule, "msg", logmsg[0], "pid", args[1], "time", args[2])
 			}
 			return
 		}
 	}
-	log.Tracef("Global Dispatcher Received: %s %s", msg.Payload, msg.Auxiliary)
+	golog.Trace("Global Dispatcher Received", "module", logModule, "payload", msg.Payload, "auxiliary", msg.Auxiliary)
 	if msg.HasError() {
-		log.Error(msg.Payload[0])
+		golog.Error("global dispatcher received error", "module", logModule, "error", msg.Payload[0])
 	}
 	if msg.PayloadHeader.MessageType == UnknownTypeOne || msg.PayloadHeader.MessageType == ResponseWithReturnValueInPayload {
 		g.dtxConnection.Dispatch(msg)
@@ -148,7 +145,7 @@ func (g GlobalDispatcher) Dispatch(msg Message) {
 }
 
 func notifyOfPublishedCapabilities(msg Message) {
-	log.Debug("capabs received")
+	golog.Debug("capabs received", "module", logModule)
 }
 
 // NewUsbmuxdConnection connects and starts reading from a Dtx based service on the device
@@ -208,10 +205,10 @@ func reader(dtxConn *Connection) {
 			defer dtxConn.close(err)
 			errText := err.Error()
 			if err == io.EOF || strings.Contains(errText, "use of closed network") {
-				log.Debug("DTX Connection with EOF")
+				golog.Debug("DTX Connection with EOF", "module", logModule)
 				return
 			}
-			log.Errorf("error reading dtx connection %+v", err)
+			golog.Error("error reading dtx connection", "module", logModule, "error", err)
 			return
 		}
 		if _channel, ok := dtxConn.activeChannels.Load(msg.ChannelCode); ok {
@@ -228,7 +225,7 @@ func SendAckIfNeeded(dtxConn *Connection, msg Message) {
 		ack := BuildAckMessage(msg)
 		err := dtxConn.Send(ack)
 		if err != nil {
-			log.Errorf("Error sending ack:%s", err)
+			golog.Error("Error sending ack", "module", logModule, "error", err)
 		}
 	}
 }
@@ -269,16 +266,16 @@ func (dtxConn *Connection) RequestChannelIdentifier(identifier string, messageDi
 	auxiliary.AddInt32(code)
 	arch, _ := nskeyedarchiver.ArchiveBin(identifier)
 	auxiliary.AddBytes(arch)
-	log.WithFields(log.Fields{"channel_id": identifier}).Debug("Requesting channel")
+	golog.Debug("Requesting channel", "module", logModule, "channel_id", identifier)
 
 	ctx, cancel := context.WithTimeout(context.Background(), dtxConn.globalChannel.timeout)
 	defer cancel()
 	rply, err := dtxConn.globalChannel.sendAndAwaitReply(ctx, true, Methodinvocation, payload, auxiliary)
-	log.Debug(rply)
+	golog.Debug("channel request reply", "module", logModule, "channel_id", identifier, "reply", rply)
 	if err != nil {
-		log.WithFields(log.Fields{"channel_id": identifier, "error": err}).Error("failed requesting channel")
+		golog.Error("failed requesting channel", "module", logModule, "channel_id", identifier, "error", err)
 	}
-	log.WithFields(log.Fields{"channel_id": identifier}).Debug("Channel open")
+	golog.Debug("Channel open", "module", logModule, "channel_id", identifier)
 	channel := &Channel{channelCode: code, channelName: identifier, messageIdentifier: 1, connection: dtxConn, messageDispatcher: messageDispatcher, responseWaiters: map[int]chan Message{}, defragmenters: map[int]*FragmentDecoder{}, timeout: 5 * time.Second}
 	dtxConn.activeChannels.Store(code, channel)
 	for _, opt := range opts {

@@ -7,8 +7,8 @@ import (
 
 	"github.com/Masterminds/semver"
 	dtx "github.com/danielpaulus/go-ios/ios/dtx_codec"
+	"github.com/danielpaulus/go-ios/ios/golog"
 	"github.com/danielpaulus/go-ios/ios/instruments"
-	log "github.com/sirupsen/logrus"
 )
 
 func runXCUIWithBundleIdsXcode11Ctx(
@@ -16,12 +16,12 @@ func runXCUIWithBundleIdsXcode11Ctx(
 	config TestConfig,
 	version *semver.Version,
 ) ([]TestSuite, error) {
-	log.Debugf("set up xcuitest")
+	golog.Debug("set up xcuitest", "module", logModule, "udid", config.Device.Properties.SerialNumber)
 	testSessionId, xctestConfigPath, testConfig, testInfo, err := setupXcuiTest(config.Device, config.BundleId, config.TestRunnerBundleId, config.XctestConfigName, config.TestsToRun, config.TestsToSkip, config.XcTest, version)
 	if err != nil {
 		return make([]TestSuite, 0), fmt.Errorf("RunXCUIWithBundleIdsXcode11Ctx: cannot create test config: %w", err)
 	}
-	log.Debugf("test session setup ok")
+	golog.Debug("test session setup ok", "module", logModule, "udid", config.Device.Properties.SerialNumber)
 	conn, err := dtx.NewUsbmuxdConnection(config.Device, testmanagerd)
 	if err != nil {
 		return make([]TestSuite, 0), fmt.Errorf("RunXCUIWithBundleIdsXcode11Ctx: cannot create a usbmuxd connection to testmanagerd: %w", err)
@@ -35,7 +35,7 @@ func runXCUIWithBundleIdsXcode11Ctx(
 		return make([]TestSuite, 0), fmt.Errorf("RunXCUIWithBundleIdsXcode11Ctx: cannot create a usbmuxd connection to testmanagerd: %w", err)
 	}
 	defer conn2.Close()
-	log.Debug("connections ready")
+	golog.Debug("connections ready", "module", logModule, "udid", config.Device.Properties.SerialNumber)
 	ideDaemonProxy2 := newDtxProxyWithConfig(conn2, testConfig, config.Listener)
 	ideDaemonProxy2.ideInterface.testConfig = testConfig
 	// TODO: fixme
@@ -55,16 +55,16 @@ func runXCUIWithBundleIdsXcode11Ctx(
 	if err != nil {
 		return make([]TestSuite, 0), fmt.Errorf("RunXCUIWithBundleIdsXcode11Ctx: cannot start the test runner: %w", err)
 	}
-	log.Debugf("Runner started with pid:%d, waiting for testBundleReady", pid)
+	golog.Debug("Runner started, waiting for testBundleReady", "module", logModule, "udid", config.Device.Properties.SerialNumber, "pid", pid)
 
 	err = ideDaemonProxy2.daemonConnection.initiateControlSession(pid, protocolVersion)
 	if err != nil {
 		return make([]TestSuite, 0), fmt.Errorf("RunXCUIWithBundleIdsXcode11Ctx: cannot initiate a control session with capabilities: %w", err)
 	}
-	log.Debugf("control session initiated")
+	golog.Debug("control session initiated", "module", logModule, "udid", config.Device.Properties.SerialNumber, "pid", pid)
 	ideInterfaceChannel := ideDaemonProxy.dtxConnection.ForChannelRequest(proxyDispatcher{id: "emty"})
 
-	log.Debug("start executing testplan")
+	golog.Debug("start executing testplan", "module", logModule, "udid", config.Device.Properties.SerialNumber)
 	err = ideDaemonProxy2.daemonConnection.startExecutingTestPlanWithProtocolVersion(ideInterfaceChannel, 25)
 	if err != nil {
 		return make([]TestSuite, 0), fmt.Errorf("RunXCUIWithBundleIdsXcode11Ctx: cannot start executing test plan: %w", err)
@@ -72,15 +72,15 @@ func runXCUIWithBundleIdsXcode11Ctx(
 
 	select {
 	case <-conn.Closed():
-		log.Debug("conn closed")
+		golog.Debug("conn closed", "module", logModule, "udid", config.Device.Properties.SerialNumber)
 		if conn.Err() != dtx.ErrConnectionClosed {
-			log.WithError(conn.Err()).Error("conn closed unexpectedly")
+			golog.Error("conn closed unexpectedly", "module", logModule, "udid", config.Device.Properties.SerialNumber, "error", conn.Err())
 		}
 		break
 	case <-conn2.Closed():
-		log.Debug("conn2 closed")
+		golog.Debug("conn2 closed", "module", logModule, "udid", config.Device.Properties.SerialNumber)
 		if conn2.Err() != dtx.ErrConnectionClosed {
-			log.WithError(conn2.Err()).Error("conn2 closed unexpectedly")
+			golog.Error("conn2 closed unexpectedly", "module", logModule, "udid", config.Device.Properties.SerialNumber, "error", conn2.Err())
 		}
 		break
 	case <-config.Listener.Done():
@@ -88,15 +88,15 @@ func runXCUIWithBundleIdsXcode11Ctx(
 	case <-ctx.Done():
 		break
 	}
-	log.Infof("Killing test runner with pid %d ...", pid)
+	golog.Info("Killing test runner", "module", logModule, "udid", config.Device.Properties.SerialNumber, "pid", pid)
 	err = pControl.KillProcess(pid)
 	if err != nil {
-		log.Infof("Nothing to kill, process with pid %d is already dead", pid)
+		golog.Info("Nothing to kill, process is already dead", "module", logModule, "udid", config.Device.Properties.SerialNumber, "pid", pid)
 	} else {
-		log.Info("Test runner killed with success")
+		golog.Info("Test runner killed with success", "module", logModule, "udid", config.Device.Properties.SerialNumber)
 	}
 
-	log.Debugf("Done running test")
+	golog.Debug("Done running test", "module", logModule, "udid", config.Device.Properties.SerialNumber)
 
 	return config.Listener.TestSuites, config.Listener.err
 }
@@ -118,7 +118,7 @@ func startTestRunner11(pControl *instruments.ProcessControl, xctestConfigPath st
 		maps.Copy(env, wdaenv)
 
 		for key, value := range wdaenv {
-			log.Debugf("adding extra env %s=%s", key, value)
+			golog.Debug("adding extra env", "module", logModule, "bundleID", bundleID, "key", key, "value", value)
 		}
 	}
 

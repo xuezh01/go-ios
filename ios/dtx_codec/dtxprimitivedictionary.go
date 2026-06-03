@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/danielpaulus/go-ios/ios/golog"
 	"github.com/danielpaulus/go-ios/ios/nskeyedarchiver"
 	archiver "github.com/danielpaulus/go-ios/ios/nskeyedarchiver"
-	log "github.com/sirupsen/logrus"
 )
 
 // PrimitiveDictionary contains a custom dictionary type
@@ -121,7 +121,7 @@ func (d PrimitiveDictionary) String() string {
 				jsonBytes, _ := json.Marshal(msg[0])
 				prettyString = string(jsonBytes)
 			} else {
-				log.Warnf("failed decoding with %+v", err)
+				golog.Warn("failed decoding", "module", logModule, "error", err)
 			}
 			result += fmt.Sprintf("{t:%s, v:%s},", toString(v), prettyString)
 			continue
@@ -145,17 +145,17 @@ func DecodeAuxiliary(auxBytes []byte) PrimitiveDictionary {
 	for len(auxBytes) >= 4 {
 		keyType, key, remainingBytes, err := readEntry(auxBytes)
 		if err != nil {
-			log.Warnf("DecodeAuxiliary: error reading key entry: %v", err)
+			golog.Warn("DecodeAuxiliary: error reading key entry", "module", logModule, "error", err)
 			break
 		}
 		auxBytes = remainingBytes
 		if len(auxBytes) < 4 {
-			log.Warnf("DecodeAuxiliary: insufficient bytes for value entry")
+			golog.Warn("DecodeAuxiliary: insufficient bytes for value entry", "module", logModule)
 			break
 		}
 		valueType, value, remainingBytes, err := readEntry(auxBytes)
 		if err != nil {
-			log.Warnf("DecodeAuxiliary: error reading value entry: %v", err)
+			golog.Warn("DecodeAuxiliary: error reading value entry", "module", logModule, "error", err)
 			break
 		}
 		auxBytes = remainingBytes

@@ -10,7 +10,7 @@ import (
 
 	"github.com/Masterminds/semver"
 	"github.com/danielpaulus/go-ios/ios"
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 )
 
 // PersonalizedDeveloperDiskImageMounter allows mounting personalized developer disk images
@@ -88,7 +88,7 @@ func (p PersonalizedDeveloperDiskImageMounter) MountImage(imagePath string) erro
 
 	signature, err := p.queryPersonalizationManifest(dmgPath)
 	if err != nil {
-		log.Info("no existing device-side manifest, requesting new signature from Apple TSS")
+		golog.Info("no existing device-side manifest, requesting new signature from Apple TSS", "module", logModule, "udid", p.entry.Properties.SerialNumber, "imagePath", imagePath)
 
 		p, err = p.closeAndReconnect()
 		if err != nil {
@@ -105,7 +105,7 @@ func (p PersonalizedDeveloperDiskImageMounter) MountImage(imagePath string) erro
 			return fmt.Errorf("MountImage: failed to get signature from Apple: %w", err)
 		}
 	} else {
-		log.Info("reusing existing device-side manifest, skipping Apple TSS")
+		golog.Info("reusing existing device-side manifest, skipping Apple TSS", "module", logModule, "udid", p.entry.Properties.SerialNumber, "imagePath", imagePath)
 	}
 
 	imageSize, err := getFileSize(dmgPath)
@@ -123,7 +123,7 @@ func (p PersonalizedDeveloperDiskImageMounter) MountImage(imagePath string) erro
 	}
 	defer imageFile.Close()
 	n, err := io.Copy(p.deviceConn.Writer(), imageFile)
-	log.Debugf("%d bytes written", n)
+	golog.Debug("bytes written", "module", logModule, "udid", p.entry.Properties.SerialNumber, "dmgPath", dmgPath, "count", n)
 	if err != nil {
 		return fmt.Errorf("MountImage: could not copy developer disk image to the device: %w", err)
 	}
@@ -154,7 +154,7 @@ func (p PersonalizedDeveloperDiskImageMounter) UnmountImage() error {
 		"Command":   "UnmountImage",
 		"MountPath": "/System/Developer",
 	}
-	log.Debugf("sending: %+v", req)
+	golog.Debug("sending", "module", logModule, "udid", p.entry.Properties.SerialNumber, "request", req)
 	err := p.plistRw.Write(req)
 	if err != nil {
 		return err

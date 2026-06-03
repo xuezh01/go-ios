@@ -6,9 +6,11 @@ import (
 	"fmt"
 
 	dtx "github.com/danielpaulus/go-ios/ios/dtx_codec"
+	"github.com/danielpaulus/go-ios/ios/golog"
 	"github.com/danielpaulus/go-ios/ios/nskeyedarchiver"
-	log "github.com/sirupsen/logrus"
 )
+
+const logModule = "go-ios/accessibility"
 
 type Notification struct {
 	Value interface{}
@@ -87,7 +89,7 @@ func (a *ControlInterface) readhostAppStateChanged(ctx context.Context) {
 			notification = Notification{Err: err}
 		} else {
 			value := stateChange[0]
-			log.Infof("hostAppStateChanged:%s", value)
+			golog.Info("hostAppStateChanged", "module", logModule, "service", serviceName, "value", value)
 			notification = Notification{Value: value}
 		}
 		a.notifier.HostAppStateChanged(notification)
@@ -107,7 +109,7 @@ func (a *ControlInterface) readhostInspectorNotificationReceived(ctx context.Con
 			notification = Notification{Err: err}
 		} else {
 			val := decoded[0].(map[string]interface{})["Value"]
-			log.Infof("hostInspectorNotificationReceived:%s", val)
+			golog.Info("hostInspectorNotificationReceived", "module", logModule, "service", serviceName, "value", val)
 			notification = Notification{Value: val}
 		}
 		a.notifier.HostInspectorNotificationReceived(notification)
@@ -133,30 +135,30 @@ func (a *ControlInterface) init(ctx context.Context) error {
 		return err
 	}
 
-	log.Info("Device Capabilities:", deviceCapabilities)
+	golog.Info("Device Capabilities", "module", logModule, "service", serviceName, "capabilities", deviceCapabilities)
 	apiVersion, err := a.deviceAPIVersion()
 	if err != nil {
 		return err
 	}
-	log.Info("Api version:", apiVersion)
+	golog.Info("Api version", "module", logModule, "service", serviceName, "version", apiVersion)
 
 	auditCaseIds, err := a.deviceAllAuditCaseIDs(apiVersion)
 	if err != nil {
 		return err
 	}
-	log.Info("AuditCaseIDs", auditCaseIds)
+	golog.Info("AuditCaseIDs", "module", logModule, "service", serviceName, "auditCaseIds", auditCaseIds)
 
 	deviceInspectorSupportedEventTypes, err := a.deviceInspectorSupportedEventTypes()
 	if err != nil {
 		return err
 	}
-	log.Info("deviceInspectorSupportedEventTypes:", deviceInspectorSupportedEventTypes)
+	golog.Info("deviceInspectorSupportedEventTypes", "module", logModule, "service", serviceName, "eventTypes", deviceInspectorSupportedEventTypes)
 
 	canNav, err := a.deviceInspectorCanNavWhileMonitoringEvents()
 	if err != nil {
 		return err
 	}
-	log.Info("deviceInspectorCanNavWhileMonitoringEvents:", canNav)
+	golog.Info("deviceInspectorCanNavWhileMonitoringEvents", "module", logModule, "service", serviceName, "canNav", canNav)
 
 	err = a.deviceSetAppMonitoringEnabled(true)
 	if err != nil {
@@ -166,10 +168,10 @@ func (a *ControlInterface) init(ctx context.Context) error {
 	for _, v := range auditCaseIds {
 		name, err := a.deviceHumanReadableDescriptionForAuditCaseID(v)
 		if err != nil {
-			log.Warnf("Failed to get human readable description for audit case ID %s: %v", v, err)
+			golog.Warn("failed to get human readable description for audit case ID", "module", logModule, "service", serviceName, "auditCaseId", v, "error", err)
 			continue
 		}
-		log.Infof("%s -- %s", v, name)
+		golog.Info("audit case description", "module", logModule, "service", serviceName, "auditCaseId", v, "name", name)
 	}
 	return nil
 }
@@ -187,13 +189,13 @@ func (a *ControlInterface) EnableSelectionMode() {
 func (a *ControlInterface) SwitchToDevice() {
 	a.TurnOff()
 	resp, _ := a.deviceAccessibilitySettings()
-	log.Info("AX Settings received:", resp)
+	golog.Info("AX Settings received", "module", logModule, "service", serviceName, "settings", resp)
 	a.deviceInspectorShowIgnoredElements(false)
 	a.deviceSetAuditTargetPid(0)
 	a.deviceInspectorFocusOnElement()
 	_, err := a.awaitHostInspectorCurrentElementChanged(context.Background())
 	if err != nil {
-		log.Warnf("await element change failed during SwitchToDevice: %v", err)
+		golog.Warn("await element change failed during SwitchToDevice", "module", logModule, "service", serviceName, "error", err)
 	}
 	a.deviceInspectorPreviewOnElement()
 	a.deviceHighlightIssue()
@@ -206,7 +208,7 @@ func (a *ControlInterface) TurnOff() {
 	a.deviceInspectorFocusOnElement()
 	_, err := a.awaitHostInspectorCurrentElementChanged(context.Background())
 	if err != nil {
-		log.Warnf("await element change failed during TurnOff: %v", err)
+		golog.Warn("await element change failed during TurnOff", "module", logModule, "service", serviceName, "error", err)
 	}
 	a.deviceInspectorPreviewOnElement()
 	a.deviceHighlightIssue()
@@ -442,13 +444,13 @@ func (a *ControlInterface) GetElement(ctx context.Context) (AXElementData, error
 }
 
 func (a *ControlInterface) UpdateAccessibilitySetting(name string, val interface{}) {
-	log.Info("Updating Accessibility Setting")
+	golog.Info("Updating Accessibility Setting", "module", logModule, "service", serviceName, "setting", name)
 
 	resp, err := a.updateAccessibilitySetting(name, val)
 	if err != nil {
 		panic(fmt.Sprintf("Failed setting: %s", err))
 	}
-	log.Info("Setting Updated", resp)
+	golog.Info("Setting Updated", "module", logModule, "service", serviceName, "setting", name, "response", resp)
 }
 
 func (a *ControlInterface) ResetToDefaultAccessibilitySettings() error {
@@ -462,10 +464,10 @@ func (a *ControlInterface) ResetToDefaultAccessibilitySettings() error {
 func (a *ControlInterface) awaitHostInspectorCurrentElementChanged(ctx context.Context) (map[string]interface{}, error) {
 	msg, err := a.channel.ReceiveMethodCallWithTimeout(ctx, "hostInspectorCurrentElementChanged:")
 	if err != nil {
-		log.Errorf("Failed to receive hostInspectorCurrentElementChanged: %v", err)
+		golog.Error("failed to receive hostInspectorCurrentElementChanged", "module", logModule, "service", serviceName, "error", err)
 		return nil, fmt.Errorf("failed to receive hostInspectorCurrentElementChanged: %w", err)
 	}
-	log.Info("received hostInspectorCurrentElementChanged")
+	golog.Info("received hostInspectorCurrentElementChanged", "module", logModule, "service", serviceName)
 	result, err := nskeyedarchiver.Unarchive(msg.Auxiliary.GetArguments()[0].([]byte))
 	if err != nil {
 		panic(fmt.Sprintf("Failed unarchiving: %s this is a bug and should not happen", err))
@@ -476,7 +478,7 @@ func (a *ControlInterface) awaitHostInspectorCurrentElementChanged(ctx context.C
 func (a *ControlInterface) awaitHostInspectorMonitoredEventTypeChanged() {
 	msg := a.channel.ReceiveMethodCall("hostInspectorMonitoredEventTypeChanged:")
 	n, _ := nskeyedarchiver.Unarchive(msg.Auxiliary.GetArguments()[0].([]byte))
-	log.Infof("hostInspectorMonitoredEventTypeChanged: was set to %d by the device", n[0])
+	golog.Info("hostInspectorMonitoredEventTypeChanged set by the device", "module", logModule, "service", serviceName, "value", n[0])
 }
 
 func (a *ControlInterface) deviceInspectorMoveWithOptions(direction MoveDirection) {

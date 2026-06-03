@@ -6,9 +6,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/danielpaulus/go-ios/ios/golog"
 	"github.com/danielpaulus/go-ios/ios/nskeyedarchiver"
-	log "github.com/sirupsen/logrus"
 )
+
+const logModule = "go-ios/dtx_codec"
 
 type Channel struct {
 	channelCode       int
@@ -98,7 +100,7 @@ func (d *Channel) methodCallWithReply(ctx context.Context, selector string, auxi
 	payload, _ := nskeyedarchiver.ArchiveBin(selector)
 	msg, err := d.sendAndAwaitReply(ctx, true, Methodinvocation, payload, auxiliary)
 	if err != nil {
-		log.WithFields(log.Fields{"channel_id": d.channelName, "error": err, "methodselector": selector}).Info("failed starting invoking method")
+		golog.Info("failed starting invoking method", "module", logModule, "channel_id", d.channelName, "error", err, "methodselector", selector)
 		return msg, err
 	}
 	if msg.HasError() {
@@ -115,7 +117,7 @@ func (d *Channel) MethodCallAsync(selector string, args ...interface{}) error {
 	}
 	err := d.Send(false, Methodinvocation, payload, auxiliary)
 	if err != nil {
-		log.WithFields(log.Fields{"channel_id": d.channelName, "error": err, "methodselector": selector}).Info("failed starting invoking method")
+		golog.Info("failed starting invoking method", "module", logModule, "channel_id", d.channelName, "error", err, "methodselector", selector)
 		return err
 	}
 	return nil
@@ -171,7 +173,7 @@ func (d *Channel) Dispatch(msg Message) {
 		d.messageIdentifier = msg.Identifier + 1
 	}
 	if msg.PayloadHeader.MessageType == Methodinvocation {
-		log.Trace("Dispatching:", msg.Payload[0].(string))
+		golog.Trace("dispatching", "module", logModule, "channel_id", d.channelName, "selector", msg.Payload[0].(string))
 		if v, ok := d.registeredMethods[msg.Payload[0].(string)]; ok {
 			d.mutex.Unlock()
 			v <- msg
@@ -194,10 +196,10 @@ func (d *Channel) Dispatch(msg Message) {
 					messagesBytes := defragmenter.Extract()
 					msg, leftover, err := DecodeNonBlocking(messagesBytes)
 					if len(leftover) != 0 {
-						log.Error("Decoding fragmented message failed")
+						golog.Error("Decoding fragmented message failed", "module", logModule, "channel_id", d.channelName)
 					}
 					if err != nil {
-						log.Error("Decoding fragment")
+						golog.Error("Decoding fragment", "module", logModule, "channel_id", d.channelName)
 					}
 
 					if msg.ConversationIndex > 0 {
@@ -210,7 +212,7 @@ func (d *Channel) Dispatch(msg Message) {
 				}
 				return
 			}
-			log.Warn("Received message fragment without first message, dropping it")
+			golog.Warn("Received message fragment without first message, dropping it", "module", logModule, "channel_id", d.channelName)
 			delete(d.responseWaiters, msg.Identifier)
 			delete(d.defragmenters, msg.Identifier)
 			return

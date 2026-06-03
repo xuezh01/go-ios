@@ -9,7 +9,7 @@ import (
 	"io"
 	"reflect"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 )
 
 // PlistCodec is a codec for PLIST based services with [4 byte big endian length][plist-payload] based messages
@@ -25,7 +25,7 @@ func NewPlistCodec() PlistCodec {
 // followed by the plist as a string
 func (plistCodec PlistCodec) Encode(message interface{}) ([]byte, error) {
 	stringContent := ToPlist(message)
-	log.Tracef("Lockdown send %v", reflect.TypeOf(message))
+	golog.Trace("Lockdown send", "module", logModule, "type", reflect.TypeOf(message))
 	buf := new(bytes.Buffer)
 	length := len(stringContent)
 	messageLength := uint32(length)
@@ -78,7 +78,7 @@ func NewPlistCodecReadWriter(r io.Reader, w io.Writer) PlistCodecReadWriter {
 // this encoded data followed by the actual data.
 func (p PlistCodecReadWriter) Write(m interface{}) error {
 	stringContent := ToPlist(m)
-	log.Tracef("Lockdown send %v", reflect.TypeOf(m))
+	golog.Trace("Lockdown send", "module", logModule, "type", reflect.TypeOf(m))
 	buf := new(bytes.Buffer)
 	length := len(stringContent)
 	messageLength := uint32(length)
