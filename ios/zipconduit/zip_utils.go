@@ -3,8 +3,6 @@ package zipconduit
 import (
 	"encoding/hex"
 	"strings"
-
-	"github.com/danielpaulus/go-ios/ios/golog"
 )
 
 const logModule = "go-ios/zipconduit"
@@ -69,7 +67,9 @@ func init() {
 	extra, err := hex.DecodeString(s)
 	zipExtraBytes = extra
 	if err != nil {
-		golog.Fatal("this is impossible to break", "module", logModule, "error", err)
+		// The input is a hardcoded constant, so this can only fail if the code
+		// itself is wrong — a programmer error, not a runtime condition.
+		panic("zipconduit: invalid hardcoded zip extra bytes: " + err.Error())
 	}
 }
 

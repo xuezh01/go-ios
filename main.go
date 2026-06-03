@@ -1422,10 +1422,7 @@ The commands work as following:
 			logFatal("parameter bundleid and app_path must be specified")
 		}
 		stopAtEntry, _ := arguments.Bool("--stop-at-entry")
-		err = debugserver.Start(device, appPath, stopAtEntry)
-		if err != nil {
-			slog.Error(err.Error())
-		}
+		exitIfError("debug server failed", debugserver.Start(device, appPath, stopAtEntry))
 	}
 
 	b, _ = arguments.Bool("batteryregistry")

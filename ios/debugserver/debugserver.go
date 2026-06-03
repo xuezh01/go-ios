@@ -2,6 +2,7 @@ package debugserver
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -193,36 +194,47 @@ func Start(device ios.DeviceEntry, appPath string, stopAtEntry bool) error {
 	// listen at random port
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		golog.Fatal("failed to listen", "module", logModule, "udid", device.Properties.SerialNumber, "appPath", appPath, "error", err)
+		return fmt.Errorf("failed to listen on 127.0.0.1: %w", err)
 	}
 	defer listener.Close()
 	port := listener.Addr().(*net.TCPAddr).Port
 	golog.Info("debug proxy listening", "module", logModule, "udid", device.Properties.SerialNumber, "port", port)
+
+	// Run lldb in the background; its result ends the debug session. Start
+	// returns that result (nil when the session ends cleanly), so the caller
+	// decides what to do instead of this library exiting the process.
+	lldbDone := make(chan error, 1)
 	go func() {
 		time.Sleep(time.Second)
-		err := startLLDB(appPath, container, port, stopAtEntry)
-		if err != nil {
-			golog.Fatal("lldb failed", "module", logModule, "udid", device.Properties.SerialNumber, "port", port, "error", err)
-		} else {
-			// exit without error
-			os.Exit(0)
+		lldbDone <- startLLDB(appPath, container, port, stopAtEntry)
+	}()
+
+	// Proxy connections until Start returns and closes the listener.
+	go func() {
+		for {
+			localConn, err := listener.Accept()
+			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					return // listener closed because the session ended
+				}
+				golog.Error("accept failed", "module", logModule, "udid", device.Properties.SerialNumber, "port", port, "error", err)
+				continue
+			}
+			go func() {
+				lc := ios.NewLockDownConnection(intf)
+				cli := &DebugClient{
+					c:         lc,
+					gdbServer: NewGDBServer(lc.Conn()),
+				}
+				// start proxy
+				go io.Copy(localConn, cli.Conn())
+				io.Copy(cli.Conn(), localConn)
+			}()
 		}
 	}()
-	for {
-		localConn, err := listener.Accept()
-		if err != nil {
-			golog.Error("accept failed", "module", logModule, "udid", device.Properties.SerialNumber, "port", port, "error", err)
-			continue
-		}
-		go func() {
-			lc := ios.NewLockDownConnection(intf)
-			cli := &DebugClient{
-				c:         lc,
-				gdbServer: NewGDBServer(lc.Conn()),
-			}
-			// start proxy
-			go io.Copy(localConn, cli.Conn())
-			io.Copy(cli.Conn(), localConn)
-		}()
+
+	if err := <-lldbDone; err != nil {
+		return fmt.Errorf("lldb failed: %w", err)
 	}
+	return nil
 }

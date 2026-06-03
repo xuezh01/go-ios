@@ -100,7 +100,10 @@ func startScreenshotting(conn *ScreenshotService) {
 		start := time.Now()
 		pngBytes, err := conn.TakeScreenshot()
 		if err != nil {
-			golog.Fatal("Screenshot failed", "module", logModule, "error", err)
+			// Stop the streaming loop instead of killing the host process; a
+			// screenshot failure must not take down a caller embedding go-ios.
+			golog.Error("screenshot failed, stopping screenshot loop", "module", logModule, "error", err)
+			return
 		}
 		elapsed := time.Since(start)
 		golog.Debug("shot done", "module", logModule, "seconds", elapsed.Seconds())

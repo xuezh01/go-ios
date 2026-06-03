@@ -15,7 +15,6 @@ package golog
 import (
 	"context"
 	"log/slog"
-	"os"
 	"runtime"
 	"sync/atomic"
 	"time"
@@ -46,13 +45,6 @@ func Debug(msg string, args ...any) { logl(slog.LevelDebug, msg, args...) }
 func Info(msg string, args ...any)  { logl(slog.LevelInfo, msg, args...) }
 func Warn(msg string, args ...any)  { logl(slog.LevelWarn, msg, args...) }
 func Error(msg string, args ...any) { logl(slog.LevelError, msg, args...) }
-
-// Fatal logs at error level and exits the process with status 1, matching the
-// behavior of the logrus Fatal calls this replaces.
-func Fatal(msg string, args ...any) {
-	logl(slog.LevelError, msg, args...)
-	os.Exit(1)
-}
 
 // Enabled reports whether the current logger would emit at the given level.
 // Useful to guard expensive log-argument construction.
