@@ -1,8 +1,8 @@
 module github.com/danielpaulus/go-ios
 
-go 1.22.0
+go 1.24.0
 
-toolchain go1.22.5
+toolchain go1.24.13
 
 require (
 	github.com/Masterminds/semver v1.5.0
@@ -24,6 +24,7 @@ require (
 	golang.org/x/exp v0.0.0-20230725093048-515e97ebf090
 	golang.org/x/net v0.26.0
 	golang.org/x/sys v0.21.0
+	golang.org/x/term v0.21.0
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2
 	gvisor.dev/gvisor v0.0.0-20240405191320-0878b34101b5
 	howett.net/plist v0.0.0-20200419221736-3b63eb3a43b5
