@@ -1,6 +1,7 @@
 package imagemounter
 
 import (
+	"crypto/sha512"
 	"fmt"
 	"io"
 	"os"
@@ -22,6 +23,7 @@ type PersonalizedDeveloperDiskImageMounter struct {
 	version    *semver.Version
 	tss        tssClient
 	ecid       uint64
+	entry      ios.DeviceEntry
 }
 
 // NewPersonalizedDeveloperDiskImageMounter creates a PersonalizedDeveloperDiskImageMounter for the device entry
@@ -46,6 +48,7 @@ func NewPersonalizedDeveloperDiskImageMounter(entry ios.DeviceEntry, version *se
 		version:    version,
 		tss:        newTssClient(),
 		ecid:       ecid,
+		entry:      entry,
 	}, nil
 }
 
@@ -62,8 +65,9 @@ func (p PersonalizedDeveloperDiskImageMounter) ListImages() ([][]byte, error) {
 // MountImage mounts the personalized developer disk image present at imagePath.
 // imagePath needs to point to the 'Restore' directory of the personalized developer disk image.
 //
-// MountImage gets device identifiers and a nonce from the device first, which needs to be signed by Apple
-// and after that the developer disk image is sent to the device with this signature to be able to mount it.
+// MountImage first tries to reuse an existing device-side manifest via QueryPersonalizationManifest
+// to avoid unnecessary Apple TSS requests on re-mounts. If no manifest exists, it falls back
+// to querying a nonce and getting a new signature from Apple's TSS server.
 func (p PersonalizedDeveloperDiskImageMounter) MountImage(imagePath string) error {
 	manifest, err := loadBuildManifest(path.Join(imagePath, "BuildManifest.plist"))
 	if err != nil {
@@ -74,24 +78,40 @@ func (p PersonalizedDeveloperDiskImageMounter) MountImage(imagePath string) erro
 	if err != nil {
 		return fmt.Errorf("MountImage: failed to query personalization identifiers: %w", err)
 	}
-	nonce, err := p.queryPersonalizedImageNonce()
-	if err != nil {
-		return fmt.Errorf("MountImage: failed to get nonce: %w", err)
-	}
 
 	identity, err := manifest.findIdentity(identifiers)
 	if err != nil {
 		return fmt.Errorf("MountImage: could not find identity for identifiers %+v: %w", identifiers, err)
 	}
 
-	signature, err := p.tss.getSignature(identity, identifiers, nonce, p.ecid)
+	dmgPath := path.Join(imagePath, identity.dmgPath())
+
+	signature, err := p.queryPersonalizationManifest(dmgPath)
 	if err != nil {
-		return fmt.Errorf("MountImage: failed to get signature from Apple: %w", err)
+		log.Info("no existing device-side manifest, requesting new signature from Apple TSS")
+
+		p, err = p.closeAndReconnect()
+		if err != nil {
+			return fmt.Errorf("MountImage: failed to reconnect after manifest query: %w", err)
+		}
+
+		nonce, err := p.queryPersonalizedImageNonce()
+		if err != nil {
+			return fmt.Errorf("MountImage: failed to get nonce: %w", err)
+		}
+
+		signature, err = p.tss.getSignature(identity, identifiers, nonce, p.ecid)
+		if err != nil {
+			return fmt.Errorf("MountImage: failed to get signature from Apple: %w", err)
+		}
+	} else {
+		log.Info("reusing existing device-side manifest, skipping Apple TSS")
 	}
 
-	dmgPath := path.Join(imagePath, identity.Manifest.PersonalizedDmg.Info.Path)
-
 	imageSize, err := getFileSize(dmgPath)
+	if err != nil {
+		return fmt.Errorf("MountImage: %w", err)
+	}
 
 	err = sendUploadRequest(p.plistRw, "Personalized", signature, imageSize)
 	if err != nil {
@@ -112,7 +132,7 @@ func (p PersonalizedDeveloperDiskImageMounter) MountImage(imagePath string) erro
 		return err
 	}
 
-	trustCache, err := os.ReadFile(path.Join(imagePath, identity.Manifest.LoadableTrustCache.Info.Path))
+	trustCache, err := os.ReadFile(path.Join(imagePath, identity.trustCachePath()))
 	if err != nil {
 		return fmt.Errorf("MountImage: could not load trust-cache. %w", err)
 	}
@@ -140,6 +160,59 @@ func (p PersonalizedDeveloperDiskImageMounter) UnmountImage() error {
 		return err
 	}
 	return nil
+}
+
+func (p PersonalizedDeveloperDiskImageMounter) queryPersonalizationManifest(dmgPath string) ([]byte, error) {
+	f, err := os.Open(dmgPath)
+	if err != nil {
+		return nil, fmt.Errorf("queryPersonalizationManifest: failed to open DMG: %w", err)
+	}
+	defer f.Close()
+
+	h := sha512.New384()
+	if _, err := io.Copy(h, f); err != nil {
+		return nil, fmt.Errorf("queryPersonalizationManifest: failed to hash DMG: %w", err)
+	}
+	digest := h.Sum(nil)
+
+	err = p.plistRw.Write(map[string]interface{}{
+		"Command":               "QueryPersonalizationManifest",
+		"PersonalizedImageType": "DeveloperDiskImage",
+		"ImageType":             "DeveloperDiskImage",
+		"ImageSignature":        digest,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("queryPersonalizationManifest: failed to write command: %w", err)
+	}
+
+	var resp map[string]interface{}
+	err = p.plistRw.Read(&resp)
+	if err != nil {
+		return nil, fmt.Errorf("queryPersonalizationManifest: failed to read response: %w", err)
+	}
+
+	if sig, ok := resp["ImageSignature"].([]byte); ok {
+		return sig, nil
+	}
+	return nil, fmt.Errorf("queryPersonalizationManifest: no ImageSignature in response %+v", resp)
+}
+
+func (p PersonalizedDeveloperDiskImageMounter) closeAndReconnect() (PersonalizedDeveloperDiskImageMounter, error) {
+	p.deviceConn.Close()
+
+	deviceConn, err := ios.ConnectToService(p.entry, serviceName)
+	if err != nil {
+		return p, fmt.Errorf("closeAndReconnect: failed to reconnect to %s: %w", serviceName, err)
+	}
+
+	return PersonalizedDeveloperDiskImageMounter{
+		deviceConn: deviceConn,
+		plistRw:    ios.NewPlistCodecReadWriter(deviceConn.Reader(), deviceConn.Writer()),
+		version:    p.version,
+		tss:        p.tss,
+		ecid:       p.ecid,
+		entry:      p.entry,
+	}, nil
 }
 
 func (p PersonalizedDeveloperDiskImageMounter) queryPersonalizedImageNonce() ([]byte, error) {

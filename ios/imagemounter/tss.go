@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"howett.net/plist"
 )
 
@@ -34,7 +35,8 @@ func (t tssClient) getSignature(identity buildIdentity, identifiers personalizat
 		"@ApImg4Ticket":     true,
 		"@BBTicket":         true,
 		"@HostPlatformInfo": "mac",
-		"@VersionInfo":      "libauthinstall-973.40.2",
+		"@VersionInfo":      "libauthinstall-1104.0.9",
+		"@UUID":             uuid.New().String(),
 		"ApBoardID":         identifiers.BoardId,
 		"ApChipID":          identifiers.ChipID,
 		"ApECID":            ecid,
@@ -42,23 +44,28 @@ func (t tssClient) getSignature(identity buildIdentity, identifiers personalizat
 		"ApProductionMode":  true,
 		"ApSecurityDomain":  identifiers.SecurityDomain,
 		"ApSecurityMode":    true,
-		"LoadableTrustCache": map[string]interface{}{
-			"Digest":  identity.Manifest.LoadableTrustCache.Digest,
-			"EPRO":    true,
-			"ESEC":    true,
-			"Trusted": true,
-		},
+		"SepNonce":          make([]byte, 20),
+		"UID_MODE":          false,
+	}
 
-		"PersonalizedDMG": map[string]interface{}{
-			"Digest":  identity.Manifest.PersonalizedDmg.Digest,
-			"EPRO":    true,
-			"ESEC":    true,
-			"Name":    "DeveloperDiskImage",
+	for key, entry := range identity.Manifest {
+		if !entry.Trusted {
+			continue
+		}
+		entryParams := map[string]interface{}{
+			"Digest":  entry.Digest,
 			"Trusted": true,
-		},
-
-		"SepNonce": make([]byte, 20),
-		"UID_MODE": false,
+			"EPRO":    entry.EPRO,
+			"ESEC":    entry.ESEC,
+		}
+		if key == "PersonalizedDMG" || key == "PersonalizedDmg" {
+			if entry.Name != "" {
+				entryParams["Name"] = entry.Name
+			} else {
+				entryParams["Name"] = "DeveloperDiskImage"
+			}
+		}
+		params[key] = entryParams
 	}
 
 	for k, v := range identifiers.AdditionalIdentifiers {
