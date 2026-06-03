@@ -5,13 +5,20 @@
 // sees standard slog behavior. Call ios.SetLogger (which forwards to SetLogger
 // here) to route go-ios's logs to your own *slog.Logger — this affects only
 // go-ios and never touches the process-global slog.Default().
+//
+// The level functions capture the *caller's* program counter, so a handler with
+// AddSource: true reports the real callsite (e.g. ios/tunnel/tunnel.go) rather
+// than this wrapper. The cost matches calling slog directly: one runtime.Callers
+// and no extra allocation.
 package golog
 
 import (
 	"context"
 	"log/slog"
 	"os"
+	"runtime"
 	"sync/atomic"
+	"time"
 )
 
 // LevelTrace is below slog.LevelDebug, used for the most verbose go-ios logs
@@ -34,16 +41,16 @@ func L() *slog.Logger {
 	return slog.Default()
 }
 
-func Trace(msg string, args ...any) { L().Log(context.Background(), LevelTrace, msg, args...) }
-func Debug(msg string, args ...any) { L().Debug(msg, args...) }
-func Info(msg string, args ...any)  { L().Info(msg, args...) }
-func Warn(msg string, args ...any)  { L().Warn(msg, args...) }
-func Error(msg string, args ...any) { L().Error(msg, args...) }
+func Trace(msg string, args ...any) { logl(LevelTrace, msg, args...) }
+func Debug(msg string, args ...any) { logl(slog.LevelDebug, msg, args...) }
+func Info(msg string, args ...any)  { logl(slog.LevelInfo, msg, args...) }
+func Warn(msg string, args ...any)  { logl(slog.LevelWarn, msg, args...) }
+func Error(msg string, args ...any) { logl(slog.LevelError, msg, args...) }
 
 // Fatal logs at error level and exits the process with status 1, matching the
 // behavior of the logrus Fatal calls this replaces.
 func Fatal(msg string, args ...any) {
-	L().Error(msg, args...)
+	logl(slog.LevelError, msg, args...)
 	os.Exit(1)
 }
 
@@ -51,4 +58,20 @@ func Fatal(msg string, args ...any) {
 // Useful to guard expensive log-argument construction.
 func Enabled(level slog.Level) bool {
 	return L().Enabled(context.Background(), level)
+}
+
+// logl emits a record at level, capturing the caller's PC (not this wrapper's)
+// so AddSource handlers point at the real callsite. Standard slog-wrapper recipe.
+func logl(level slog.Level, msg string, args ...any) {
+	l := L()
+	ctx := context.Background()
+	if !l.Enabled(ctx, level) {
+		return
+	}
+	var pcs [1]uintptr
+	// skip: runtime.Callers, logl, and the exported wrapper (Info/Debug/…).
+	runtime.Callers(3, pcs[:])
+	r := slog.NewRecord(time.Now(), level, msg, pcs[0])
+	r.Add(args...)
+	_ = l.Handler().Handle(ctx, r)
 }
