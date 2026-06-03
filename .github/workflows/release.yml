@@ -93,6 +93,10 @@ jobs:
   build_on_linux_and_release:
     runs-on: ubuntu-latest
     needs: build_on_mac
+    outputs:
+      # The exact version published to npm, consumed by verify_install. Read
+      # from package.json after the version sed so it is format-agnostic.
+      published_version: ${{ steps.publish.outputs.published_version }}
     permissions:
       # contents: write is needed to upload the release assets below. Declaring a
       # permissions block opts out of the default token scopes, so we must list it
@@ -155,6 +159,27 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           release-tag: ${{ env.release_tag }}
 
+      - name: Set release notes from CHANGELOG.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Extract the top released section from CHANGELOG.md: everything from
+          # the first "## [x.y.z]" heading up to (not including) the next one.
+          # The "## [Unreleased]" heading is skipped (no leading digit).
+          awk '
+            /^## \[[0-9]+\.[0-9]+\.[0-9]+/ { count++; if (count == 1) { cap=1; print; next } else { exit } }
+            cap { print }
+          ' CHANGELOG.md > release_body.md
+          if [ ! -s release_body.md ]; then
+            echo "::warning::no released section found in CHANGELOG.md; leaving release notes empty"
+            exit 0
+          fi
+          # The action just created this release; it is the most recent one.
+          TAG="$(gh release list --limit 1 --json tagName --jq '.[0].tagName')"
+          echo "Setting notes on release $TAG"
+          gh release edit "$TAG" --notes-file release_body.md
+
       # OIDC trusted publishing needs Node >= 22.14.0 and npm >= 11.5.1.
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -163,6 +188,7 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Publish NPM
+        id: publish
         run: |
           npm install -g npm@latest
           mkdir ./npm_publish/dist
@@ -183,3 +209,46 @@ jobs:
           # No NODE_AUTH_TOKEN / .npmrc auth line: npm authenticates via OIDC
           # trusted publishing. Setting an (even empty) token would break OIDC.
           npm publish
+          # Surface the exact published version for the verify_install job.
+          echo "published_version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+  # Post-publish smoke test: install the freshly released go-ios from the public
+  # registry on every OS and run the binary, asserting the version matches what
+  # we just published. This runs AFTER the release is out (it alerts, it does not
+  # gate), and is what would have caught the Windows-PATH install bug earlier.
+  verify_install:
+    needs: build_on_linux_and_release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install published release and run it
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ needs.build_on_linux_and_release.outputs.published_version }}
+        run: |
+          set -euo pipefail
+          # npm registry propagation can lag a few seconds after publish.
+          for i in 1 2 3 4 5; do
+            if npm install -g "go-ios@${EXPECTED_VERSION}"; then
+              break
+            fi
+            echo "install attempt $i failed, retrying in 10s..."
+            sleep 10
+          done
+
+          # The package has no "bin" field; postinstall.js drops the binary
+          # straight into npm's global bin dir, which is on PATH.
+          OUTPUT="$(ios version 2>&1)"
+          echo "ios version output: $OUTPUT"
+          echo "$OUTPUT" | grep -q "\"version\":\"${EXPECTED_VERSION}\"" \
+            || { echo "::error::expected version ${EXPECTED_VERSION} not found in 'ios version' output"; exit 1; }
+          echo "OK: go-ios@${EXPECTED_VERSION} installed and runs on ${{ matrix.os }}"
