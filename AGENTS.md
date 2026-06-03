@@ -10,12 +10,10 @@ and idiomatic; match the style of surrounding code.
 
 - Build: `go build ./...` (CI uses `make build`, which also wires up the
   `go.work` workspace). Use the Go toolchain pinned in `go.mod`.
-- Tests, as CI runs them: `go test -tags=fast ./...`.
-- Some tests need real hardware and are not for a plain local run: the
-  `test/e2e/` suite is gated by the `e2e` build tag and `GO_IOS_E2E_DEVICES`,
-  and various `ios/**/*_integration_test.go` files talk to a device over
-  usbmuxd. With a device/usbmuxd attached locally they engage and can hang;
-  device tests run on the self-hosted CI runners.
+- Unit tests: `go test ./...` (device-free; this is what CI runs).
+- Device/integration testing lives only in the `test/e2e/` suite, gated by the
+  `e2e` build tag and `GO_IOS_E2E_DEVICES`, and runs on the self-hosted CI
+  runners. Put device-dependent tests there, not in the package unit tests.
 
 ## Real-device CI
 

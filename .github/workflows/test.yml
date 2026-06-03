@@ -38,8 +38,8 @@ jobs:
       - name: Build executable
         run: go build
 
-      #- name: Run fast tests
-      #  run: go test -v -tags=fast ./...
+      #- name: Run unit tests
+      #  run: go test -v ./...
 
   test_on_linux:
     runs-on: ubuntu-latest
@@ -60,8 +60,8 @@ jobs:
       - name: Build executable
         run: make build --trace
 
-      - name: Run fast tests
-        run: go test -v -tags=fast ./...
+      - name: Run unit tests
+        run: go test ./...
 
       - name: Verify code formatting
         run: test -z "$(gofmt -l .)"
