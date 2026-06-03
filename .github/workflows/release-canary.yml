@@ -167,14 +167,16 @@ jobs:
           EXPECTED_VERSION: 0.0.${{ github.run_number }}
         run: |
           set -euo pipefail
-          # npm registry propagation is usually instant but can lag a few
-          # seconds right after publish; retry the pinned-version install.
-          for i in 1 2 3 4 5; do
+          # npm registry propagation to all replicas can lag well past a minute
+          # right after publish. Give it a 60s head start, then retry generously.
+          echo "waiting 60s for npm registry propagation before first install..."
+          sleep 60
+          for i in $(seq 1 12); do
             if npm install -g "go-ios-canary@${EXPECTED_VERSION}"; then
               break
             fi
-            echo "install attempt $i failed, retrying in 10s..."
-            sleep 10
+            echo "install attempt $i failed (version may not have propagated yet), retrying in 15s..."
+            sleep 15
           done
 
           # The package has no "bin" field; postinstall.js drops the binary

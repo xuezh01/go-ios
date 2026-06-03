@@ -21,12 +21,6 @@ Use `## [Unreleased]` to jot down notable changes between releases if you like.
 ### 🐛 Fixes
 - **REST API `KillApp`** — fixed kill-by-bundle-ID, which stopped matching after `CFBundleIdentifier`/`CFBundleExecutable` became method calls on the app model. (#729)
 
-### ✨ New features & improvements
-- **Redesigned help output** — `ios --help` now shows a clean, sectioned layout (global options + a full command table with one-line descriptions) instead of the raw docopt usage block. `ios help <command>`, `ios <command> --help`, and `ios <command> -h` are all equivalent, including nested subcommands like `ios help tunnel start`. (#716)
-
-### 🐛 Fixes
-- **REST API `KillApp`** — fixed kill-by-bundle-ID, which stopped matching after `CFBundleIdentifier`/`CFBundleExecutable` became method calls on the app model. (#729)
-
 ## [1.0.217] - 2026-06-03
 
 First release published to npm since `1.0.213` — npm publishing broke when npm

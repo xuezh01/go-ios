@@ -167,16 +167,19 @@ jobs:
           set -euo pipefail
           DATE="$(date +%Y-%m-%d)"
           printf '%s\n' "$RELEASE_NOTES" > /tmp/notes.md
-          # Insert a new "## [VERSION] - DATE" section directly after "## [Unreleased]".
+          # Insert a new "## [VERSION] - DATE" section just before the most recent
+          # released version (the first "## [x.y.z]" heading). This keeps any
+          # existing "## [Unreleased]" content under [Unreleased] instead of
+          # absorbing it into the new section.
           awk -v hdr="## [${VERSION}] - ${DATE}" -v notesfile="/tmp/notes.md" '
-            { print }
-            /^## \[Unreleased\]/ && !done {
-              print ""
+            /^## \[[0-9]/ && !done {
               print hdr
               print ""
               while ((getline line < notesfile) > 0) print line
+              print ""
               done = 1
             }
+            { print }
           ' CHANGELOG.md > CHANGELOG.new
           mv CHANGELOG.new CHANGELOG.md
 
@@ -250,13 +253,16 @@ jobs:
           EXPECTED_VERSION: ${{ needs.prepare_version.outputs.version }}
         run: |
           set -euo pipefail
-          # npm registry propagation can lag a few seconds after publish.
-          for i in 1 2 3 4 5; do
+          # npm registry propagation to all replicas can lag well past a minute
+          # right after publish. Give it a 60s head start, then retry generously.
+          echo "waiting 60s for npm registry propagation before first install..."
+          sleep 60
+          for i in $(seq 1 12); do
             if npm install -g "go-ios@${EXPECTED_VERSION}"; then
               break
             fi
-            echo "install attempt $i failed, retrying in 10s..."
-            sleep 10
+            echo "install attempt $i failed (version may not have propagated yet), retrying in 15s..."
+            sleep 15
           done
 
           OUTPUT="$(ios version 2>&1)"
