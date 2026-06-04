@@ -153,6 +153,7 @@ Usage:
   ios screenshot [options] [--output=<outfile>] [--stream] [--port=<port>]
   ios setlocation [options] [--lat=<lat>] [--lon=<lon>]
   ios setlocationgpx [options] [--gpxfilepath=<gpxfilepath>]
+  ios shutdown [options]
   ios set-wallpaper <imagePath> [--screen=<screen>] [--p12file=<orgid>] [--password=<p12password>] [options]
   ios get-wallpaper [--output=<outfile>] [options]
   ios get-icon-layout [--output=<outfile>] [options]
@@ -398,6 +399,8 @@ The commands work as following:
 
     ios setlocationgpx [options] [--gpxfilepath=<gpxfilepath>]      Updates the location of the device based on the data in a GPX file.
                                                                     Ex.: setlocationgpx --gpxfilepath=/home/username/location.gpx
+
+    ios shutdown [options]                                          Shuts down the device
 
     ios set-wallpaper <imagePath> [--screen=<screen>] [--p12file=<orgid>] [--password=<p12password>] [options]
                                                                     Set the device wallpaper from a JPEG/PNG file. --screen is lock|home|both (default home).
@@ -1463,6 +1466,17 @@ The commands work as following:
 		err := diagnostics.Reboot(device)
 		if err != nil {
 			slog.Error("reboot failed", "error", err)
+		} else {
+			slog.Info("ok")
+		}
+		return
+	}
+
+	b, _ = arguments.Bool("shutdown")
+	if b {
+		err := diagnostics.Shutdown(device)
+		if err != nil {
+			slog.Error("shutdown failed", "error", err)
 		} else {
 			slog.Info("ok")
 		}
