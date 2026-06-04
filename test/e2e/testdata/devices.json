@@ -20,5 +20,27 @@
     "ProductName": "iPhone OS",
     "ModelNumber": "MLVH3",
     "ConnectionType": "USB"
+  },
+  "5b98c87e742570f10e22113b7dd8502638011e16": {
+    "ProductType": "iPhone8,4",
+    "ProductVersion": "14.3",
+    "BuildVersion": "18C66",
+    "DeviceClass": "iPhone",
+    "CPUArchitecture": "arm64",
+    "HardwareModel": "N69AP",
+    "ProductName": "iPhone OS",
+    "ModelNumber": "MLM62",
+    "ConnectionType": "USB"
+  },
+  "8a4b8ae031a0565729e92b836e82bccc4540f8fd": {
+    "ProductType": "iPhone6,2",
+    "ProductVersion": "12.5.7",
+    "BuildVersion": "16H81",
+    "DeviceClass": "iPhone",
+    "CPUArchitecture": "arm64",
+    "HardwareModel": "N53AP",
+    "ProductName": "iPhone OS",
+    "ModelNumber": "NE432",
+    "ConnectionType": "USB"
   }
 }
