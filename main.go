@@ -137,6 +137,7 @@ Usage:
   ios prepare cloudconfig [options]
   ios prepare create-cert
   ios prepare printskip
+  ios wifi [--ssid=<ssid>] [--password=<password>] [--enc-type=<encType>] [--remove] [options]
   ios profile add <profileFile> [--p12file=<orgid>] [--password=<p12password>] [options]
   ios profile list [options]
   ios profile remove <profileName> [options]
@@ -346,6 +347,10 @@ The commands work as following:
                                                                        Make sure you rename and store it in a safe place.
 
     ios prepare printskip                                              Print all options you can skip.
+
+	ios wifi [--ssid=<ssid>] [--password=<password>] [--enc-type=<encType>] [--remove]
+																		Installs a wifi profile on the device forcing a connection to the provided WiFi network
+																		If --remove is specified, the wifi profile of the provided ssid will be removed.
 
     ios profile add <profileFile> [--p12file=<orgid>] [--password=<p12password>]
                                                                        Install profile file on the device.
@@ -663,6 +668,26 @@ The commands work as following:
 		profileTypeId, _ := arguments.String("<profileTypeId>")
 		profileId, _ := arguments.String("<profileId>")
 		deviceState(device, false, enable, profileTypeId, profileId)
+	}
+
+	b, _ = arguments.Bool("wifi")
+	if b {
+		ssid, _ := arguments.String("--ssid")
+		psw, _ := arguments.String("--password")
+		encType, _ := arguments.String("--enc-type")
+		remove, _ := arguments.Bool("--remove")
+
+		if encType == "" {
+			encType = "WPA"
+		}
+
+		if remove {
+			exitIfError("failed removing wifi", mcinstall.RemoveWifi(device, ssid))
+		} else {
+			exitIfError("failed preparing wifi", mcinstall.PrepareWifi(device, ssid, psw, encType))
+		}
+		fmt.Print(convertToJSONString("ok"))
+		return
 	}
 
 	b, _ = arguments.Bool("prepare")

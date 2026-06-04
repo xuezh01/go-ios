@@ -174,6 +174,9 @@ commands:
   - path: prepare printskip
     usage: ios prepare printskip
     summary: Print prepare skip options.
+  - path: wifi
+    usage: ios wifi [--ssid=<ssid>] [--password=<password>] [--enc-type=<encType>] [--remove] [options]
+    summary: Install or remove a Wi-Fi auto-connect profile (supervised + setup = silent, else confirm on device).
   - path: profile add
     usage: ios profile add <profileFile> [--p12file=<orgid>] [--password=<p12password>] [options]
     summary: Install profile on device.

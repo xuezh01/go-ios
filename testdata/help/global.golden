@@ -95,6 +95,7 @@ Commands:
   uninstall                  Uninstall app by bundle ID.
   version                    Print version.
   voiceover                  Manage VoiceOver state.
+  wifi                       Install or remove a Wi-Fi auto-connect profile (supervised + setup = silent, else confirm on device).
   zoom                       Manage Zoom state.
 
 Run 'ios help <command>' or 'ios <command> --help' for command details.
