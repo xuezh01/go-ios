@@ -67,12 +67,32 @@ func runDiskspaceCommand(ctx commandContext) {
 	if JSONdisabled {
 		fmt.Printf("      Model: %s\n", info.Model)
 		fmt.Printf("  BlockSize: %d\n", info.BlockSize)
-		fmt.Printf("  FreeSpace: %s\n", ios.ByteCountDecimal(int64(info.FreeBytes)))
-		fmt.Printf("  UsedSpace: %s\n", ios.ByteCountDecimal(int64(info.TotalBytes-info.FreeBytes)))
-		fmt.Printf(" TotalSpace: %s\n", ios.ByteCountDecimal(int64(info.TotalBytes)))
+		fmt.Printf("  FreeSpace: %s\n", diskspaceByteCount(info.FreeBytes))
+		fmt.Printf("  UsedSpace: %s\n", diskspaceByteCount(usedDiskBytes(info.TotalBytes, info.FreeBytes)))
+		fmt.Printf(" TotalSpace: %s\n", diskspaceByteCount(info.TotalBytes))
 	} else {
 		fmt.Println(convertToJSONString(info))
 	}
+}
+
+func diskspaceByteCount(bytes uint64) string {
+	const unit = uint64(1000)
+	if bytes < unit {
+		return fmt.Sprintf("%dB", bytes)
+	}
+	div, exp := unit, 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f%cB", float64(bytes)/float64(div), "kMGTPE"[exp])
+}
+
+func usedDiskBytes(totalBytes uint64, freeBytes uint64) uint64 {
+	if freeBytes > totalBytes {
+		exitIfError("diskspace: invalid device info", fmt.Errorf("free bytes %d exceeds total bytes %d", freeBytes, totalBytes))
+	}
+	return totalBytes - freeBytes
 }
 
 func runBatteryCheckCommand(ctx commandContext) {
