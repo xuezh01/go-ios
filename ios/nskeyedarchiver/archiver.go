@@ -7,6 +7,8 @@ import (
 	"howett.net/plist"
 )
 
+const logModule = "go-ios/nskeyedarchiver"
+
 /*
 type NSKeyedObject struct {
 	isPrimitive bool

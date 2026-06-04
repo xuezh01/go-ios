@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"fmt"
 
+	"log/slog"
+
 	"github.com/danielpaulus/go-ios/ios"
 	"github.com/danielpaulus/go-ios/ios/afc"
+	"github.com/danielpaulus/go-ios/ios/golog"
 	"github.com/danielpaulus/go-ios/ios/mobileactivation"
-	log "github.com/sirupsen/logrus"
+	"github.com/google/uuid"
 )
 
 const (
@@ -19,30 +22,48 @@ const (
 // here - https://developer.apple.com/documentation/devicemanagement/skipkeys
 var skipAllSetup = []string{
 	"Accessibility",
+	"AccessibilityAppearance",
 	"ActionButton",
+	"AgeAssurance",
+	"AgeBasedSafetySettings",
 	"Android",
 	"Appearance",
 	"AppleID",
 	"AppStore",
+	"Avatar",
 	"Biometric",
 	"CameraButton",
+	"CloudStorage",
+	"DeviceProtection",
 	"DeviceToDeviceMigration",
 	"Diagnostics",
+	"Display",
 	"EnableLockdownMode",
+	"ExpressLanguage",
 	"FileVault",
 	"iCloudDiagnostics",
 	"iCloudStorage",
 	"iMessageAndFaceTime",
+	"IntendedUser",
 	"Intelligence",
 	"Keyboard",
+	"Language",
+	"LanguageAndLocale",
 	"Location",
+	"LockdownMode",
 	"MessagingActivationUsingPhoneNumber",
+	"Multitasking",
+	"OSShowCase",
 	"Passcode",
 	"Payment",
+	"PreferredLanguage",
 	"Privacy",
+	"Region",
+	"Registration",
 	"Restore",
 	"RestoreCompleted",
 	"Safety",
+	"SafetyAndHandling",
 	"ScreenSaver",
 	"ScreenTime",
 	"SIMSetup",
@@ -51,13 +72,21 @@ var skipAllSetup = []string{
 	"SpokenLanguage",
 	"TapToSetup",
 	"TermsOfAddress",
+	"Tips",
+	"Tone",
 	"TOS",
+	"TouchID",
+	"TrueToneDisplay",
 	"TVHomeScreenSync",
 	"TVProviderSignIn",
 	"TVRoom",
+	"UnlockWithWatch",
 	"UpdateCompleted",
+	"Wallpaper",
 	"WatchMigration",
+	"WebContentFiltering",
 	"Welcome",
+	"WiFi",
 	// Deprecated keys
 	// Deprecated in iOS 15
 	"DisplayTone",
@@ -75,7 +104,8 @@ func GetAllSetupSkipOptions() []string {
 }
 
 // Prepare prepares an activated device and supervises it if desired. skip is the list of setup options to skip, use GetAllSetupSkipOptions()
-// to get a list of all available options. certBytes is the DER encoded supervision certificate. If it is nil then the device won't be supervised.
+// to get a list of all available options. certBytes must be raw DER encoded certificate bytes.
+// If certBytes is nil then the device won't be supervised.
 // ios.CreateDERFormattedSupervisionCert() provides an example how to generate these certificates. Orgname can be any string, it will show up as the
 // supervision name on the device. Locale and lang can be set. If they are empty strings, then the default will be en_US and en.
 func Prepare(device ios.DeviceEntry, skip []string, certBytes []byte, orgname string, locale string, lang string) error {
@@ -94,63 +124,65 @@ func Prepare(device ios.DeviceEntry, skip []string, certBytes []byte, orgname st
 	if !isActivated {
 		return fmt.Errorf("please activate the device first")
 	}
-	log.Infof("device is activated:%v", isActivated)
+	golog.Info("device is activated", "module", logModule, "udid", device.Properties.SerialNumber, "activated", isActivated)
 
 	conn, err := New(device)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
-	log.Info("send flush request")
+	golog.Info("send flush request", "module", logModule, "udid", device.Properties.SerialNumber)
 	re, err := check(conn.sendAndReceive(request("Flush")))
 	if err != nil {
 		return err
 	}
-	log.Debugf("flush: %v", re)
-	log.Info("get cloud config")
+	golog.Debug("flush response", "module", logModule, "udid", device.Properties.SerialNumber, "response", re)
+	golog.Info("get cloud config", "module", logModule, "udid", device.Properties.SerialNumber)
 	config, err := check(conn.sendAndReceive(request("GetCloudConfiguration")))
 	if err != nil {
 		return err
 	}
-	log.Debugf("get first cloudconfig: %v", config)
+	golog.Debug("get first cloudconfig", "module", logModule, "udid", device.Properties.SerialNumber, "config", config)
 	hello, err := check(conn.sendAndReceive(request("HelloHostIdentifier")))
 	if err != nil {
 		return err
 	}
-	log.Debugf("hello response: %v", hello)
+	golog.Debug("hello response", "module", logModule, "udid", device.Properties.SerialNumber, "response", hello)
 
 	cloudConfig := map[string]interface{}{
-		"AllowPairing": 1,
+		"AllowPairing": true,
 		"SkipSetup":    skip,
 	}
 
 	if supervise {
-		log.Info("supervising device")
+		golog.Info("supervising device", "module", logModule, "udid", device.Properties.SerialNumber)
 		cloudConfig["OrganizationName"] = orgname
+		cloudConfig["OrganizationMagic"] = uuid.New().String()
 		cloudConfig["SupervisorHostCertificates"] = [][]byte{certBytes}
 		cloudConfig["IsSupervised"] = true
+		cloudConfig["IsMultiUser"] = false
 	}
 
 	setCloudConfig := map[string]interface{}{
 		"CloudConfiguration": cloudConfig,
 		"RequestType":        "SetCloudConfiguration",
 	}
-	log.Debugf("set cloud config: %v", setCloudConfig)
+	golog.Debug("set cloud config", "module", logModule, "udid", device.Properties.SerialNumber, "config", setCloudConfig)
 	setResp, err := check(conn.sendAndReceive(setCloudConfig))
 	if err != nil {
 		return fmt.Errorf("failed setting cloud config, resp: %v err: %v", setResp, err)
 	}
-	log.Debugf("set response: %v", setResp)
+	golog.Debug("set response", "module", logModule, "udid", device.Properties.SerialNumber, "response", setResp)
 	hello, err = check(conn.sendAndReceive(request("HelloHostIdentifier")))
 	if err != nil {
 		return err
 	}
-	log.Debug("get cloud config")
+	golog.Debug("get cloud config", "module", logModule, "udid", device.Properties.SerialNumber)
 	config, err = check(conn.sendAndReceive(request("GetCloudConfiguration")))
 	if err != nil {
 		return err
 	}
-	log.Debugf("cloud config config: %v", config)
+	golog.Debug("cloud config config", "module", logModule, "udid", device.Properties.SerialNumber, "config", config)
 
 	hello, err = check(conn.sendAndReceive(request("HelloHostIdentifier")))
 	if err != nil {
@@ -159,7 +191,7 @@ func Prepare(device ios.DeviceEntry, skip []string, certBytes []byte, orgname st
 	err = conn.EscalateUnsupervised()
 	if err != nil {
 		// the device always throws a CertificateRejected error here, but it works just fine
-		log.Debug(err)
+		golog.Debug("escalate unsupervised error (expected)", "module", logModule, "udid", device.Properties.SerialNumber, "error", err)
 	}
 	hello, err = check(conn.sendAndReceive(request("HelloHostIdentifier")))
 	if err != nil {
@@ -195,21 +227,22 @@ func setupSkipSetup(device ios.DeviceEntry) error {
 	if err != nil {
 		return err
 	}
-	err = afcConn.RemovePathAndContents(skipSetupFilePath)
+	defer afcConn.Close()
+	err = afcConn.RemoveAll(skipSetupFilePath)
 	if err != nil {
-		log.Debug("skip setup: nothing to remove")
+		golog.Debug("skip setup: nothing to remove", "module", logModule, "udid", device.Properties.SerialNumber)
 	}
 	err = afcConn.MkDir(skipSetupDirPath)
 	if err != nil {
-		log.Warn("error creating dir")
+		golog.Warn("error creating dir", "module", logModule, "udid", device.Properties.SerialNumber)
 	}
 	err = afcConn.WriteToFile(bytes.NewReader([]byte{}), skipSetupFilePath)
 	if err != nil {
 		return err
 	}
-	if log.GetLevel() == log.DebugLevel {
-		f, _ := afcConn.ListFiles(skipSetupDirPath, "*")
-		log.Debugf("list of files %v", f)
+	if golog.Enabled(slog.LevelDebug) {
+		f, _ := afcConn.List(skipSetupDirPath)
+		golog.Debug("list of files", "module", logModule, "udid", device.Properties.SerialNumber, "files", f)
 	}
 	return nil
 }

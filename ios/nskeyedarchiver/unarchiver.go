@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"runtime/debug"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 	plist "howett.net/plist"
 )
 
@@ -175,7 +175,7 @@ func extractDictionary(object map[string]interface{}, objects []interface{}) (ma
 		return result, nil
 	}
 	if _, ok := keys[0].(string); !ok {
-		log.Warn("non string key dict found, lazy decoding by converting keys to strings :-), fix later")
+		golog.Warn("non string key dict found, lazy decoding by converting keys to strings :-), fix later", "module", logModule)
 		for i := 0; i < mapSize; i++ {
 			key := keys[i].(uint64)
 			result[fmt.Sprintf("uint64{%d}", key)] = values[i]

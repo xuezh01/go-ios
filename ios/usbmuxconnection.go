@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 )
 
 func GetSocketTypeAndAddress(socketAddress string) (string, string) {
@@ -112,7 +112,7 @@ func (muxConn *UsbMuxConnection) Send(msg interface{}) error {
 	muxConn.tag++
 	err := muxConn.encode(msg, writer)
 	if err != nil {
-		log.Error("Error sending mux")
+		golog.Error("Error sending mux", "module", logModule, "conn", &muxConn.deviceConn)
 		return err
 	}
 	return nil
@@ -149,7 +149,7 @@ func (muxConn *UsbMuxConnection) ReadMessage() (UsbMuxMessage, error) {
 
 // encode serializes a MuxMessage struct to a Plist and writes it to the io.Writer.
 func (muxConn *UsbMuxConnection) encode(message interface{}, writer io.Writer) error {
-	log.Tracef("UsbMux send %v  on  %v", reflect.TypeOf(message), &muxConn.deviceConn)
+	golog.Trace("UsbMux send", "module", logModule, "conn", &muxConn.deviceConn, "type", reflect.TypeOf(message))
 	mbytes := ToPlistBytes(message)
 	err := writeHeader(len(mbytes), muxConn.tag, writer)
 	if err != nil {
@@ -179,7 +179,7 @@ func (muxConn UsbMuxConnection) decode(r io.Reader) (UsbMuxMessage, error) {
 	if err != nil {
 		return UsbMuxMessage{}, fmt.Errorf("Error '%s' while reading usbmux package. Only %d bytes received instead of %d", err.Error(), n, muxHeader.Length-16)
 	}
-	log.Tracef("UsbMux Receive on %v", &muxConn.deviceConn)
+	golog.Trace("UsbMux Receive", "module", logModule, "conn", &muxConn.deviceConn)
 
 	return UsbMuxMessage{muxHeader, payloadBytes}, nil
 }

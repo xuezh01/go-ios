@@ -12,10 +12,12 @@ import (
 	"time"
 
 	ios "github.com/danielpaulus/go-ios/ios"
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 )
 
 const serviceName string = "com.apple.dt.simulatelocation"
+
+const logModule = "go-ios/simlocation"
 
 type Connection struct {
 	deviceConn ios.DeviceConnectionInterface
@@ -50,6 +52,7 @@ func SetLocation(device ios.DeviceEntry, lat string, lon string) error {
 	if err != nil {
 		return err
 	}
+	defer locationConn.Close()
 
 	latitude, err := strconv.ParseFloat(lat, 64)
 	if err != nil {
@@ -65,8 +68,7 @@ func SetLocation(device ios.DeviceEntry, lat string, lon string) error {
 	data.lat = latitude
 	data.lon = longitude
 
-	log.WithFields(log.Fields{"latitude": latitude, "longitude": longitude}).
-		Info("Simulating device location")
+	golog.Info("Simulating device location", "module", logModule, "udid", device.Properties.SerialNumber, "latitude", latitude, "longitude", longitude)
 
 	// Generate the byte data needed by the service to set the location
 	locationBytes, err := data.LocationBytes()
@@ -80,7 +82,6 @@ func SetLocation(device ios.DeviceEntry, lat string, lon string) error {
 		return err
 	}
 
-	locationConn.Close()
 	return nil
 }
 
@@ -179,6 +180,7 @@ func ResetLocation(device ios.DeviceEntry) error {
 	if err != nil {
 		return err
 	}
+	defer locationConn.Close()
 
 	buf := new(bytes.Buffer)
 

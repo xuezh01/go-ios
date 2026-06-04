@@ -9,7 +9,7 @@ import (
 	"io"
 
 	"github.com/danielpaulus/go-ios/ios"
-	"github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 )
 
 const coreDeviceProxy = "com.apple.internal.devicecompute.CoreDeviceProxy"
@@ -23,7 +23,7 @@ func ConnectTunnelLockdown(device ios.DeviceEntry) (Tunnel, error) {
 }
 
 func connectToTunnelLockdown(ctx context.Context, device ios.DeviceEntry, connToDevice io.ReadWriteCloser) (Tunnel, error) {
-	logrus.Info("connect to lockdown tunnel endpoint on device")
+	golog.Info("connect to lockdown tunnel endpoint on device", "module", logModule, "udid", device.Properties.SerialNumber)
 
 	tunnelInfo, err := exchangeCoreTunnelParameters(connToDevice)
 	if err != nil {
@@ -42,14 +42,14 @@ func connectToTunnelLockdown(ctx context.Context, device ios.DeviceEntry, connTo
 	go func() {
 		err := forwardTCPToInterface(tunnelCtx, tunnelInfo.ClientParameters.Mtu, connToDevice, utunIface)
 		if err != nil {
-			logrus.WithError(err).Error("failed to forward data to tunnel interface")
+			golog.Error("failed to forward data to tunnel interface", "module", logModule, "udid", device.Properties.SerialNumber, "error", err)
 		}
 	}()
 
 	go func() {
 		err := forwardTUNToDevice(tunnelCtx, tunnelInfo.ClientParameters.Mtu, utunIface, connToDevice)
 		if err != nil {
-			logrus.WithError(err).Error("failed to forward data to the device")
+			golog.Error("failed to forward data to the device", "module", logModule, "udid", device.Properties.SerialNumber, "error", err)
 		}
 	}()
 
@@ -106,8 +106,8 @@ func forwardTCPToInterface(ctx context.Context, mtu uint64, deviceConn io.Reader
 				return fmt.Errorf("failed to read IPv6 header: %w", err)
 			}
 
-			if ip6Header[0] != 0x60 {
-				return fmt.Errorf("not an IPv6 packet. expected 0x60, but got 0x%02x", ip6Header[0])
+			if ip6Header[0]>>4 != 6 {
+				return fmt.Errorf("not an IPv6 packet: expected version 6, got %d", ip6Header[0]>>4)
 			}
 			payloadLength := binary.BigEndian.Uint16(ip6Header[4:6])
 			_, err = io.ReadFull(br, payload[:payloadLength])

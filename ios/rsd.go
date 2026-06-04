@@ -7,9 +7,9 @@ import (
 	"net"
 	"strconv"
 
+	"github.com/danielpaulus/go-ios/ios/golog"
 	"github.com/danielpaulus/go-ios/ios/http"
 	"github.com/danielpaulus/go-ios/ios/xpc"
-	log "github.com/sirupsen/logrus"
 )
 
 // RsdPortProvider is an interface to get a port for a service, or a service for a port from the Remote Service Discovery on the device.
@@ -45,7 +45,7 @@ func (r RsdPortProviderJson) GetPort(service string) int {
 	if p == "" {
 		shim := fmt.Sprintf("%s.shim.remote", service)
 		if r[shim].Port != "" {
-			log.Debugf("returning port of '%s'-shim", service)
+			golog.Debug("returning port of shim", "module", logModule, "service", service)
 			return r.GetPort(shim)
 		}
 	}
@@ -60,7 +60,7 @@ func (r RsdPortProviderJson) GetService(p int) string {
 	for name, s := range r {
 		port, err := strconv.ParseInt(s.Port, 10, 64)
 		if err != nil {
-			log.Errorf("GetService: failed to parse port: %v", err)
+			golog.Error("GetService: failed to parse port", "module", logModule, "service", name, "error", err)
 			return ""
 		}
 		if port == int64(p) {
@@ -75,7 +75,7 @@ func (r RsdPortProviderJson) GetServices() (services map[string]RsdServiceEntry)
 	for name, s := range r {
 		port, err := strconv.ParseInt(s.Port, 10, 64)
 		if err != nil {
-			log.Errorf("GetService: failed to parse port: %v", err)
+			golog.Error("GetService: failed to parse port", "module", logModule, "service", name, "error", err)
 			continue
 		}
 
@@ -204,7 +204,7 @@ func newRsdServiceFromTcpConn(conn *net.TCPConn) (RsdService, error) {
 // Handshake sends a handshake request to the device and returns the RsdHandshakeResponse
 // which contains the UDID and the services available on the device.
 func (s RsdService) Handshake() (RsdHandshakeResponse, error) {
-	log.Debug("execute handshake")
+	golog.Debug("execute handshake", "module", logModule)
 	m, err := s.xpc.ReceiveOnClientServerStream()
 	if err != nil {
 		return RsdHandshakeResponse{}, fmt.Errorf("Handshake: failed to receive handshake response. %w", err)

@@ -1,0 +1,188 @@
+# Canary release pipeline. Mirrors release.yml's 3-stage build chain end-to-end,
+# but publishes to the throwaway `go-ios-canary` npm package instead of `go-ios`.
+# Use this to validate the release/OIDC publish process WITHOUT shipping a real
+# release. Triggered manually from the Actions tab.
+#
+# One-time setup on npmjs.com: create the `go-ios-canary` package's first version
+# (or register the trusted publisher on the package settings) pointing at:
+#   repo: danielpaulus/go-ios   workflow: release-canary.yml
+on: [workflow_dispatch]
+
+name: Release-Canary
+
+jobs:
+  build_on_windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Go
+        uses: actions/setup-go@v3
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: |
+          ((Get-Content -path main.go -Raw) -replace "local-build","0.0.${{ github.run_number }}") | Set-Content -Path main.go
+          mkdir bin
+          go build -ldflags="-s -w" -o bin/ios.exe
+          Compress-Archive -Path .\bin\ios.exe -CompressionLevel Optimal -DestinationPath go-ios-windows.zip
+
+      - name: upload the windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: go-ios-windows.zip
+          retention-days: 1
+          overwrite: true
+
+  build_on_mac:
+    runs-on: macos-latest
+    needs: build_on_windows
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Go
+        uses: actions/setup-go@v3
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        run: |
+          brew install gnu-sed
+          gsed -i 's/version \= \"local-build\"/version = \"0.0.${{ github.run_number }}\"/' main.go
+          mkdir bin
+          GOARCH=arm64 go build -ldflags="-s -w" -o bin/ios-arm64
+          GOARCH=amd64 go build -ldflags="-s -w" -o bin/ios-amd64
+          lipo bin/ios-amd64 bin/ios-arm64 -create -output bin/ios
+          zip -j go-ios-mac.zip bin/ios
+
+      - name: upload the macos build
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: go-ios-mac.zip
+          retention-days: 1
+          overwrite: true
+
+  build_on_linux_and_publish:
+    runs-on: ubuntu-latest
+    needs: build_on_mac
+    permissions:
+      # id-token: write lets the job mint an OIDC token for npm trusted
+      # publishing. No contents: write here — canary does not cut a GitHub release.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Go
+        uses: actions/setup-go@v3
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download mac build from previous job
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-build
+          path: ./mac-bin
+
+      - name: Unpack mac binary
+        working-directory: ./mac-bin
+        run: |
+          unzip go-ios-mac.zip
+
+      - name: Download windows build from previous job
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: ./win-bin
+
+      - name: Unpack windows binary
+        working-directory: ./win-bin
+        run: |
+          unzip go-ios-windows.zip
+
+      - name: Build linux
+        run: |
+          sed -i 's/version \= \"local-build\"/version = \"0.0.${{ github.run_number }}\"/' main.go
+          mkdir bin
+          GOARCH=arm64 go build -ldflags="-s -w" -o bin/ios-arm64
+          GOARCH=amd64 go build -ldflags="-s -w" -o bin/ios-amd64
+
+      # OIDC trusted publishing needs Node >= 22.14.0 and npm >= 11.5.1.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Publish canary NPM
+        run: |
+          npm install -g npm@latest
+          mkdir ./npm_publish/dist
+          mkdir ./npm_publish/dist/go-ios-darwin-amd64_darwin_amd64
+          mkdir ./npm_publish/dist/go-ios-darwin-arm64_darwin_arm64
+          mkdir ./npm_publish/dist/go-ios-linux-amd64_linux_amd64
+          mkdir ./npm_publish/dist/go-ios-linux-arm64_linux_arm64
+          mkdir ./npm_publish/dist/go-ios-windows-amd64_windows_amd64
+          cp ./mac-bin/ios ./npm_publish/dist/go-ios-darwin-amd64_darwin_amd64/ios
+          cp ./mac-bin/ios ./npm_publish/dist/go-ios-darwin-arm64_darwin_arm64/ios
+          cp ./win-bin/ios.exe ./npm_publish/dist/go-ios-windows-amd64_windows_amd64/ios.exe
+          cp ./bin/ios-amd64 ./npm_publish/dist/go-ios-linux-amd64_linux_amd64/ios
+          cp ./bin/ios-arm64 ./npm_publish/dist/go-ios-linux-arm64_linux_arm64/ios
+          cp ./README.md ./npm_publish
+          cd npm_publish
+          # Retarget to the throwaway canary package + a unique version per run.
+          sed -i 's/"name": "go-ios"/"name": "go-ios-canary"/' package.json
+          sed -i 's/"local-build"/"0.0.${{ github.run_number }}"/' package.json
+          npm install
+          # No NODE_AUTH_TOKEN / .npmrc auth line: npm authenticates via OIDC
+          # trusted publishing. Setting an (even empty) token would break OIDC.
+          npm publish
+
+  # Install the freshly-published canary from the public registry on every OS
+  # and run the binary, asserting it reports the version we just published.
+  # This proves the end-to-end consumer experience (npm install -> postinstall
+  # places the binary -> binary runs) on Windows, Linux and macOS.
+  verify_install:
+    needs: build_on_linux_and_publish
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install published canary and run it
+        shell: bash
+        env:
+          EXPECTED_VERSION: 0.0.${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          # npm registry propagation to all replicas can lag well past a minute
+          # right after publish. Give it a 60s head start, then retry generously.
+          echo "waiting 60s for npm registry propagation before first install..."
+          sleep 60
+          for i in $(seq 1 12); do
+            if npm install -g "go-ios-canary@${EXPECTED_VERSION}"; then
+              break
+            fi
+            echo "install attempt $i failed (version may not have propagated yet), retrying in 15s..."
+            sleep 15
+          done
+
+          # The package has no "bin" field; postinstall.js drops the binary
+          # straight into npm's global bin dir, which is on PATH.
+          OUTPUT="$(ios version 2>&1)"
+          echo "ios version output: $OUTPUT"
+          echo "$OUTPUT" | grep -q "\"version\":\"${EXPECTED_VERSION}\"" \
+            || { echo "::error::expected version ${EXPECTED_VERSION} not found in 'ios version' output"; exit 1; }
+          echo "OK: go-ios-canary@${EXPECTED_VERSION} installed and runs on ${{ matrix.os }}"

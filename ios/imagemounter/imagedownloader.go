@@ -13,7 +13,7 @@ import (
 
 	"github.com/Masterminds/semver"
 	"github.com/danielpaulus/go-ios/ios"
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 )
 
 var (
@@ -92,11 +92,13 @@ const (
 	imageFile     = "DeveloperDiskImage.dmg"
 	signatureFile = "DeveloperDiskImage.dmg.signature"
 	devicebox     = "https://deviceboxhq.com/"
-	xcode15_4_ddi = "ddi-15F31d"
+	// iOS 17+ universal personalized developer disk image hosted on deviceboxhq.
+	// Bump this when a newer DDI is published there (was ddi-15F31d).
+	xcode15_4_ddi = "ddi-17E5179g"
 )
 
 func MatchAvailable(version string) string {
-	log.Debugf("device version: %s ", version)
+	golog.Debug("matching available image for device version", "module", logModule, "version", version)
 	requestedVersionParsed := semver.MustParse(version)
 	var bestMatch *semver.Version = nil
 	var bestMatchString string
@@ -116,26 +118,26 @@ func MatchAvailable(version string) string {
 			bestMatchString = availableVersion
 		}
 	}
-	log.Debugf("device version: %s bestMatch: %s", version, bestMatch)
+	golog.Debug("matched available image", "module", logModule, "version", version, "bestMatch", bestMatch)
 
 	return bestMatchString
 }
 
 func Download17Plus(baseDir string, version *semver.Version) (string, error) {
 	downloadUrl := fmt.Sprintf("%s%s%s", devicebox, xcode15_4_ddi, ".zip")
-	log.Infof("device iOS version: %s, getting developer image: %s", version.String(), downloadUrl)
+	golog.Info("getting developer image", "module", logModule, "version", version.String(), "url", downloadUrl)
 
 	imageDownloaded, err := validateBaseDirAndLookForImage(baseDir, xcode15_4_ddi)
 	if err != nil {
 		return "", err
 	}
 	if imageDownloaded != "" {
-		log.Infof("using already downloaded image: %s", imageDownloaded)
+		golog.Info("using already downloaded image", "module", logModule, "path", imageDownloaded)
 		return path.Join(imageDownloaded, "Restore"), err
 	}
 	imageFileName := path.Join(baseDir, xcode15_4_ddi+".zip")
 	extractedPath := path.Join(baseDir, xcode15_4_ddi)
-	log.Infof("downloading '%s' to path '%s'", downloadUrl, imageFileName)
+	golog.Info("downloading image", "module", logModule, "url", downloadUrl, "path", imageFileName)
 	err = downloadFile(imageFileName, downloadUrl)
 	if err != nil {
 		return "", err
@@ -161,7 +163,7 @@ func DownloadImageFor(device ios.DeviceEntry, baseDir string) (string, error) {
 		return Download17Plus(baseDir, parsedVersion)
 	}
 	version := MatchAvailable(allValues.Value.ProductVersion)
-	log.Infof("device iOS version: %s, getting developer image for iOS %s", allValues.Value.ProductVersion, version)
+	golog.Info("getting developer image", "module", logModule, "udid", device.Properties.SerialNumber, "version", allValues.Value.ProductVersion, "imageVersion", version)
 	var imageToFind string
 	switch runtime.GOOS {
 	case "windows":
@@ -174,12 +176,12 @@ func DownloadImageFor(device ios.DeviceEntry, baseDir string) (string, error) {
 		return "", err
 	}
 	if imageDownloaded != "" {
-		log.Infof("%s already downloaded from https://github.com/mspvirajpatel/", imageDownloaded)
+		golog.Info("image already downloaded from https://github.com/mspvirajpatel/", "module", logModule, "udid", device.Properties.SerialNumber, "path", imageDownloaded)
 		return imageDownloaded, nil
 	}
 	downloadUrl := ""
-	log.Infof("downloading from: %s", downloadUrl)
-	log.Info("thank you github.com/mspvirajpatel for making these images available :-)")
+	golog.Info("downloading", "module", logModule, "udid", device.Properties.SerialNumber, "url", downloadUrl)
+	golog.Info("thank you github.com/mspvirajpatel for making these images available :-)", "module", logModule, "udid", device.Properties.SerialNumber)
 	versionDir := strings.Split(version, " (")[0]
 	downloadUrl = versionMap[version] + "/" + imageFile + "?raw=true"
 	imageFileName := path.Join(baseDir, versionDir, imageFile)
@@ -190,7 +192,7 @@ func DownloadImageFor(device ios.DeviceEntry, baseDir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	log.Infof("downloading '%s' to path '%s'", downloadUrl, imageFileName)
+	golog.Info("downloading image", "module", logModule, "udid", device.Properties.SerialNumber, "url", downloadUrl, "path", imageFileName)
 	err = downloadFile(imageFileName, downloadUrl)
 	if err != nil {
 		return "", err

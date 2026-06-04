@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 )
 
 type DumpingConn struct {
@@ -19,7 +19,7 @@ func NewDumpingConn(filePath string, conn net.Conn) *DumpingConn {
 	fileHandle, err := os.OpenFile(filePath,
 		os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
-		log.Println(err)
+		golog.Info("failed opening dump file", "module", logModule, "filePath", filePath, "error", err)
 	}
 	dc := DumpingConn{fileHandle: fileHandle, conn: conn}
 	return &dc
@@ -48,7 +48,7 @@ func (d DumpingConn) Write(b []byte) (n int, err error) {
 func (d DumpingConn) Close() error {
 	err := d.fileHandle.Close()
 	if err != nil {
-		log.Warn("failed closing bin file handle", err)
+		golog.Warn("failed closing bin file handle", "module", logModule, "error", err)
 	}
 	return d.conn.Close()
 }

@@ -10,14 +10,17 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/Masterminds/semver"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 	plist "howett.net/plist"
 )
+
+// logModule identifies this package in structured logs. It is injected as the
+// "module" attribute on every golog call in this package.
+const logModule = "go-ios"
 
 // UseHttpProxy sets the default http transport to use the given proxy url.
 // If the proxyUrl is empty, it will try to use the HTTP_PROXY or HTTPS_PROXY environment variables.
@@ -44,24 +47,6 @@ func UseHttpProxy(proxyUrl string) error {
 			return fmt.Errorf("could not parse proxy url %s: %v", proxyUrl, err)
 		}
 		http.DefaultTransport = &http.Transport{Proxy: http.ProxyURL(parsedUrl)}
-	}
-	return nil
-}
-
-// CheckRoot checks if the current user is root or has elevated privileges on Windows.
-func CheckRoot() error {
-	// On Windows, check if the process has elevated privileges
-	if runtime.GOOS == "windows" {
-		_, err := os.Open("\\\\.\\PHYSICALDRIVE0")
-		if err != nil {
-			return fmt.Errorf("this program needs elevated privileges. Run as administrator.")
-		}
-	} else {
-		// Non-Windows platforms, check if the user is root
-		u := os.Geteuid()
-		if u != 0 {
-			return fmt.Errorf("this program needs root privileges. Run with sudo.")
-		}
 	}
 	return nil
 }
@@ -124,10 +109,10 @@ func GetDeviceWithAddress(udid string, address string, provider RsdPortProvider)
 	if udid == "" {
 		udid = os.Getenv("udid")
 		if udid != "" {
-			log.Info("using udid from env.udid variable")
+			golog.Info("using udid from env.udid variable", "module", logModule, "udid", udid)
 		}
 	}
-	log.Debugf("Looking for device '%s'", udid)
+	golog.Debug("Looking for device", "module", logModule, "udid", udid)
 	deviceList, err := ListDevices()
 	if err != nil {
 		return DeviceEntry{}, err
@@ -137,8 +122,7 @@ func GetDeviceWithAddress(udid string, address string, provider RsdPortProvider)
 			return DeviceEntry{}, errors.New("no iOS devices are attached to this host")
 		}
 		device := deviceList.DeviceList[0]
-		log.WithFields(log.Fields{"udid": device.Properties.SerialNumber}).
-			Info("no udid specified using first device in list")
+		golog.Info("no udid specified using first device in list", "module", logModule, "udid", device.Properties.SerialNumber)
 		device.Address = address
 		device.Rsd = provider
 		return device, nil

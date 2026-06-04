@@ -3,7 +3,7 @@ package ios
 import (
 	"fmt"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 )
 
 const (
@@ -21,7 +21,7 @@ func SetAssistiveTouch(device DeviceEntry, enabled bool) error {
 	if err != nil {
 		return err
 	}
-	log.Debugf("Setting %s: %t", assistiveTouchKey, enabled)
+	golog.Debug("setting lockdown value", "module", logModule, "udid", device.Properties.SerialNumber, "key", assistiveTouchKey, "enabled", enabled)
 	defer lockDownConn.Close()
 	err = lockDownConn.SetValueForDomain(assistiveTouchKey, accessibilityDomain, enabled)
 	return err

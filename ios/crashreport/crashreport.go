@@ -2,13 +2,15 @@ package crashreport
 
 import (
 	"fmt"
-	"os"
 	"path"
+	"path/filepath"
 
 	"github.com/danielpaulus/go-ios/ios"
 	"github.com/danielpaulus/go-ios/ios/afc"
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 )
+
+const logModule = "go-ios/crashreport"
 
 const (
 	crashReportMoverService      = "com.apple.crashreportmover"
@@ -30,62 +32,24 @@ func DownloadReports(device ios.DeviceEntry, pattern string, targetdir string) e
 	if err != nil {
 		return err
 	}
-	afc := afc.NewFromConn(deviceConn)
-	return copyReports(afc, ".", pattern, targetdir)
-}
-
-func copyReports(afc *afc.Connection, cwd string, pattern string, targetDir string) error {
-	log.WithFields(log.Fields{"dir": cwd, "pattern": pattern, "to": targetDir}).Info("downloading")
-	targetDirInfo, err := os.Stat(targetDir)
-	if err != nil {
-		return err
-	}
-	files, err := afc.ListFiles(cwd, pattern)
-	if err != nil {
-		return err
-	}
-
-	log.Debugf("files:%+v", files)
-	for _, f := range files {
-		if f == "." || f == ".." {
-			continue
+	afcConn := afc.NewFromConn(deviceConn)
+	err = afcConn.WalkDir(".", func(p string, info afc.FileInfo, err error) error {
+		if info.Type == afc.S_IFDIR {
+			return nil
 		}
-		devicePath := path.Join(cwd, f)
-		targetFilePath := path.Join(targetDir, f)
-		log.WithFields(log.Fields{"from": devicePath, "to": targetFilePath}).Info("downloading")
-		info, err := afc.Stat(devicePath)
-		if err != nil {
-			log.Warnf("failed getting info for file: %s, skipping", f)
-			continue
+		if ok, _ := filepath.Match(pattern, filepath.Base(p)); !ok {
+			return nil
 		}
-		log.Debugf("%+v", info)
-
-		if info.IsDir() {
-			err := os.Mkdir(targetFilePath, targetDirInfo.Mode().Perm())
-			if err != nil {
-				return err
-			}
-			err = copyReports(afc, devicePath, "*", targetFilePath)
-			if err != nil {
-				return err
-			}
-			continue
-		}
-
-		err = afc.PullSingleFile(devicePath, targetFilePath)
-		if err != nil {
-			return err
-		}
-		log.WithFields(log.Fields{"from": devicePath, "to": targetFilePath}).Info("done")
-	}
-	return nil
+		return afcConn.PullSingleFile(p, path.Join(targetdir, filepath.Base(p)))
+	})
+	return err
 }
 
 func RemoveReports(device ios.DeviceEntry, cwd string, pattern string) error {
 	if pattern == "" {
 		return fmt.Errorf("empty pattern not ok, just use *")
 	}
-	log.WithFields(log.Fields{"cwd": cwd, "pattern": pattern}).Info("deleting")
+	golog.Info("deleting", "module", logModule, "udid", device.Properties.SerialNumber, "cwd", cwd, "pattern", pattern)
 	err := moveReports(device)
 	if err != nil {
 		return err
@@ -94,23 +58,16 @@ func RemoveReports(device ios.DeviceEntry, cwd string, pattern string) error {
 	if err != nil {
 		return err
 	}
-	afc := afc.NewFromConn(deviceConn)
-	files, err := afc.ListFiles(cwd, pattern)
-	if err != nil {
-		return err
-	}
-	for _, f := range files {
-		if f == "." || f == ".." {
-			continue
+	afcClient := afc.NewFromConn(deviceConn)
+	return afcClient.WalkDir(cwd, func(path string, info afc.FileInfo, err error) error {
+		if info.Type == afc.S_IFDIR {
+			return nil
 		}
-		log.WithFields(log.Fields{"path": path.Join(cwd, f)}).Info("delete")
-		err := afc.Remove(path.Join(cwd, f))
-		if err != nil {
-			return err
+		if ok, _ := filepath.Match(pattern, filepath.Base(path)); !ok {
+			return nil
 		}
-	}
-	log.WithFields(log.Fields{"cwd": cwd, "pattern": pattern}).Info("done deleting")
-	return nil
+		return afcClient.Remove(path)
+	})
 }
 
 func ListReports(device ios.DeviceEntry, pattern string) ([]string, error) {
@@ -122,17 +79,32 @@ func ListReports(device ios.DeviceEntry, pattern string) ([]string, error) {
 	if err != nil {
 		return []string{}, err
 	}
-	afc := afc.NewFromConn(deviceConn)
-	return afc.ListFiles(".", pattern)
+	afcClient := afc.NewFromConn(deviceConn)
+
+	var files []string
+	err = afcClient.WalkDir(".", func(path string, info afc.FileInfo, err error) error {
+		if info.Type == afc.S_IFDIR {
+			return nil
+		}
+		if ok, _ := filepath.Match(pattern, filepath.Base(path)); !ok {
+			return nil
+		}
+		files = append(files, path)
+		return nil
+	})
+	if err != nil {
+		return []string{}, err
+	}
+	return files, nil
 }
 
 func moveReports(device ios.DeviceEntry) error {
-	log.Debug("moving crashreports")
+	golog.Debug("moving crashreports", "module", logModule, "udid", device.Properties.SerialNumber)
 	conn, err := newMover(device)
 	if err != nil {
 		return err
 	}
-	log.Debug("connected to mover, awaiting ping")
+	golog.Debug("connected to mover, awaiting ping", "module", logModule, "udid", device.Properties.SerialNumber)
 	ping := make([]byte, 4)
 	_, err = conn.deviceConn.Reader().Read(ping)
 	if err != nil {
@@ -141,7 +113,7 @@ func moveReports(device ios.DeviceEntry) error {
 	if "ping" != string(ping) {
 		return fmt.Errorf("did not receive ping from crashreport mover: %x", ping)
 	}
-	log.Debug("ping received")
+	golog.Debug("ping received", "module", logModule, "udid", device.Properties.SerialNumber)
 	return nil
 }
 

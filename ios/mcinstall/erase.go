@@ -5,7 +5,7 @@ import (
 	"io"
 
 	"github.com/danielpaulus/go-ios/ios"
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 )
 
 // Erase tells a device to remove all apps and settings. You need to activate it afterwards.
@@ -16,20 +16,20 @@ func Erase(device ios.DeviceEntry) error {
 		return err
 	}
 	defer conn.Close()
-	log.Info("start erasing")
-	log.Debug("send flush request")
+	golog.Info("start erasing", "module", logModule, "udid", device.Properties.SerialNumber)
+	golog.Debug("send flush request", "module", logModule, "udid", device.Properties.SerialNumber)
 	_, err = check(conn.sendAndReceive(request("Flush")))
 	if err != nil {
 		return err
 	}
-	log.Debug("get cloud config")
+	golog.Debug("get cloud config", "module", logModule, "udid", device.Properties.SerialNumber)
 	config, err := check(conn.sendAndReceive(request("GetCloudConfiguration")))
 	if err != nil {
 		return err
 	}
-	log.Debugf("config: %v", config)
+	golog.Debug("got cloud config", "module", logModule, "udid", device.Properties.SerialNumber, "config", config)
 
-	log.Debug("send erase request")
+	golog.Debug("send erase request", "module", logModule, "udid", device.Properties.SerialNumber)
 	eraseRequest := map[string]interface{}{
 		"RequestType":      "EraseDevice",
 		"PreserveDataPlan": 1,
@@ -38,7 +38,7 @@ func Erase(device ios.DeviceEntry) error {
 	if err != nil && err != io.EOF {
 		return err
 	}
-	log.Info("device should be rebooting now")
+	golog.Info("device should be rebooting now", "module", logModule, "udid", device.Properties.SerialNumber)
 	return nil
 }
 

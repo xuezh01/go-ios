@@ -3,6 +3,24 @@ on:
 
 name: Unit tests
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install libusb
+        run: sudo apt-get update && sudo apt-get install -y libusb-1.0-0-dev
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.6
+
   test_on_windows:
     runs-on: windows-latest
     steps:
@@ -20,8 +38,8 @@ jobs:
       - name: Build executable
         run: go build
 
-      #- name: Run fast tests
-      #  run: go test -v -tags=fast ./...
+      #- name: Run unit tests
+      #  run: go test -v ./...
 
   test_on_linux:
     runs-on: ubuntu-latest
@@ -42,8 +60,20 @@ jobs:
       - name: Build executable
         run: make build --trace
 
-      - name: Run fast tests
-        run: go test -v -tags=fast ./...
+      - name: Run unit tests
+        run: go test ./...
 
       - name: Verify code formatting
         run: test -z "$(gofmt -l .)"
+
+  # Run the real-device e2e suite only after all unit jobs pass, and only for
+  # same-repo PRs. Fork PRs can't access the device repo vars and must not run
+  # untrusted code on the self-hosted device runners — a maintainer triggers
+  # those with a "/test-devices" comment (see device-tests-comment.yml).
+  real-device:
+    name: Real device tests
+    needs: [lint, test_on_windows, test_on_linux]
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    uses: ./.github/workflows/real-device.yml
+    permissions:
+      contents: read

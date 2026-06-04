@@ -2,6 +2,7 @@ package debugserver
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -12,11 +13,12 @@ import (
 	"time"
 
 	"github.com/danielpaulus/go-ios/ios"
+	"github.com/danielpaulus/go-ios/ios/golog"
 	"github.com/danielpaulus/go-ios/ios/installationproxy"
 	"howett.net/plist"
-
-	log "github.com/sirupsen/logrus"
 )
+
+const logModule = "go-ios/debugserver"
 
 const (
 	serviceName    = "com.apple.debugserver"
@@ -148,7 +150,7 @@ func connectToDevice(device ios.DeviceEntry) (ios.DeviceConnectionInterface, err
 	}
 	version, ok := info["ProductVersion"]
 	if !ok {
-		log.Error("cannot find version, default use ssl debug server")
+		golog.Error("cannot find version, default use ssl debug server", "module", logModule, "udid", device.Properties.SerialNumber)
 		return ios.ConnectToService(device, sslServiceName)
 	}
 	if version.(string) > "14" {
@@ -176,8 +178,8 @@ func Start(device ios.DeviceEntry, appPath string, stopAtEntry bool) error {
 	}
 	var container string
 	for _, ai := range appinfo {
-		if ai.CFBundleIdentifier == bundleId {
-			container = ai.Path
+		if ai.CFBundleIdentifier() == bundleId {
+			container = ai.Path()
 			break
 		}
 	}
@@ -192,36 +194,47 @@ func Start(device ios.DeviceEntry, appPath string, stopAtEntry bool) error {
 	// listen at random port
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("failed to listen on 127.0.0.1: %w", err)
 	}
 	defer listener.Close()
 	port := listener.Addr().(*net.TCPAddr).Port
-	log.Info("debug proxy listen port: ", port)
+	golog.Info("debug proxy listening", "module", logModule, "udid", device.Properties.SerialNumber, "port", port)
+
+	// Run lldb in the background; its result ends the debug session. Start
+	// returns that result (nil when the session ends cleanly), so the caller
+	// decides what to do instead of this library exiting the process.
+	lldbDone := make(chan error, 1)
 	go func() {
 		time.Sleep(time.Second)
-		err := startLLDB(appPath, container, port, stopAtEntry)
-		if err != nil {
-			log.Fatal(err)
-		} else {
-			// exit without error
-			log.Exit(0)
+		lldbDone <- startLLDB(appPath, container, port, stopAtEntry)
+	}()
+
+	// Proxy connections until Start returns and closes the listener.
+	go func() {
+		for {
+			localConn, err := listener.Accept()
+			if err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					return // listener closed because the session ended
+				}
+				golog.Error("accept failed", "module", logModule, "udid", device.Properties.SerialNumber, "port", port, "error", err)
+				continue
+			}
+			go func() {
+				lc := ios.NewLockDownConnection(intf)
+				cli := &DebugClient{
+					c:         lc,
+					gdbServer: NewGDBServer(lc.Conn()),
+				}
+				// start proxy
+				go io.Copy(localConn, cli.Conn())
+				io.Copy(cli.Conn(), localConn)
+			}()
 		}
 	}()
-	for {
-		localConn, err := listener.Accept()
-		if err != nil {
-			log.Error(err)
-			continue
-		}
-		go func() {
-			lc := ios.NewLockDownConnection(intf)
-			cli := &DebugClient{
-				c:         lc,
-				gdbServer: NewGDBServer(lc.Conn()),
-			}
-			// start proxy
-			go io.Copy(localConn, cli.Conn())
-			io.Copy(cli.Conn(), localConn)
-		}()
+
+	if err := <-lldbDone; err != nil {
+		return fmt.Errorf("lldb failed: %w", err)
 	}
+	return nil
 }

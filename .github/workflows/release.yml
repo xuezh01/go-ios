@@ -1,22 +1,69 @@
+# Release pipeline — manual dispatch only.
+#
+# Run it from the Actions tab (or `gh workflow run release.yml -f release_notes=... -f bump=patch`).
+# The workflow owns the version and the changelog: it computes the next version
+# from the latest tag, writes a "## [version] - date" section with your notes
+# into CHANGELOG.md, pushes that to main, tags it, creates the GitHub release
+# with those notes, publishes to npm via OIDC trusted publishing, and finally
+# verifies the published package installs and runs on all three OSes.
+#
+# All repo-mutating and outbound steps live in release_and_publish (the last
+# job before verify), so a failed build leaves nothing pushed or published.
+#
+# Requires the RELEASE_PAT secret: a fine-grained PAT (Contents: read/write on
+# this repo) from an admin account. main is a protected branch; since
+# enforce_admins is off, an admin token can push the changelog commit to it.
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+    inputs:
+      release_notes:
+        description: "Release notes (markdown). Written into CHANGELOG.md and used as the GitHub release body."
+        required: true
+        type: string
+      bump:
+        description: "Which semver part to bump from the latest tag"
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 name: Release-Go-iOS
+
 jobs:
-  build_on_windows:
-    runs-on: windows-latest
+  prepare_version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
     steps:
       - uses: actions/checkout@v3
-
-      - name: Create Release
-        id: create_release
-        uses: zendesk/action-create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_schema: semantic
+          ref: main
+          fetch-depth: 0 # need all tags to find the latest
+
+      - name: Compute next version
+        id: compute
+        run: |
+          set -euo pipefail
+          LATEST="$(git tag -l 'v*' | sort -V | tail -1)"
+          LATEST="${LATEST#v}"
+          IFS=. read -r MA MI PA <<< "$LATEST"
+          case "${{ inputs.bump }}" in
+            major) MA=$((MA + 1)); MI=0; PA=0 ;;
+            minor) MI=$((MI + 1)); PA=0 ;;
+            patch) PA=$((PA + 1)) ;;
+          esac
+          NEXT="${MA}.${MI}.${PA}"
+          echo "version=${NEXT}" >> "$GITHUB_OUTPUT"
+          echo "Latest tag v${LATEST} -> next v${NEXT} (${{ inputs.bump }} bump)"
+
+  build_on_windows:
+    runs-on: windows-latest
+    needs: prepare_version
+    steps:
+      - uses: actions/checkout@v3
 
       - name: Install Go
         uses: actions/setup-go@v3
@@ -26,11 +73,10 @@ jobs:
 
       - name: Build
         run: |
-          ((Get-Content -path main.go -Raw) -replace "local-build","${{ steps.create_release.outputs.current_tag }}") | Set-Content -Path main.go
+          ((Get-Content -path main.go -Raw) -replace "local-build","${{ needs.prepare_version.outputs.version }}") | Set-Content -Path main.go
           mkdir bin
           go build -ldflags="-s -w" -o bin/ios.exe
-          "${{ steps.create_release.outputs.current_tag }}" | Out-File -Encoding utf8NoBOM release_tag -NoNewline
-          Compress-Archive -Path .\bin\ios.exe, release_tag -CompressionLevel Optimal -DestinationPath go-ios-windows.zip
+          Compress-Archive -Path .\bin\ios.exe -CompressionLevel Optimal -DestinationPath go-ios-windows.zip
 
       - name: upload the windows build
         uses: actions/upload-artifact@v4
@@ -42,7 +88,7 @@ jobs:
 
   build_on_mac:
     runs-on: macos-latest
-    needs: build_on_windows
+    needs: [prepare_version, build_on_windows]
     steps:
       - uses: actions/checkout@v3
 
@@ -52,23 +98,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Download win release from previous job
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-build
-          path: ./win-bin
-
-      - name: Extract release tag
-        working-directory: ./win-bin
-        run: |
-          unzip go-ios-windows.zip
-          echo "release_tag="$(cat release_tag) >> $GITHUB_ENV
-
       - name: Build
         run: |
           brew install gnu-sed
-          alias sed=gsed
-          gsed -i 's/version \= \"local-build\"/version = \"${{ env.release_tag }}\"/' main.go
+          gsed -i 's/version \= \"local-build\"/version = \"${{ needs.prepare_version.outputs.version }}\"/' main.go
           mkdir bin
           GOARCH=arm64 go build -ldflags="-s -w" -o bin/ios-arm64
           GOARCH=amd64 go build -ldflags="-s -w" -o bin/ios-amd64
@@ -83,11 +116,20 @@ jobs:
           retention-days: 1
           overwrite: true
 
-  build_on_linux_and_release:
+  release_and_publish:
     runs-on: ubuntu-latest
-    needs: build_on_mac
+    needs: [prepare_version, build_on_mac]
+    permissions:
+      contents: write
+      id-token: write # OIDC token for npm trusted publishing
+    env:
+      VERSION: ${{ needs.prepare_version.outputs.version }}
     steps:
       - uses: actions/checkout@v3
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }} # admin token, can push to protected main
 
       - name: Install Go
         uses: actions/setup-go@v3
@@ -95,54 +137,81 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Download mac release from previous job
+      - name: Download mac build from previous job
         uses: actions/download-artifact@v4
         with:
           name: macos-build
           path: ./mac-bin
 
-      - name: Download and package mac binary
-        working-directory: ./mac-bin
-        run: |
-          unzip go-ios-mac.zip
-          rm go-ios-mac.zip
-          zip -j go-ios-mac.zip ios
-
-      - name: Download windows release from previous job
+      - name: Download windows build from previous job
         uses: actions/download-artifact@v4
         with:
           name: windows-build
           path: ./win-bin
 
-      - name: Download and package windows binary
-        working-directory: ./win-bin
+      - name: Build linux and package all artifacts
         run: |
-          unzip go-ios-windows.zip
-          echo "release_tag="$(cat release_tag) >> $GITHUB_ENV
-          rm go-ios-windows.zip
-          zip -j go-ios-win.zip ios.exe
-
-      - name: Build
-        run: |
-          sed -i 's/version \= \"local-build\"/version = \"${{ env.release_tag }}\"/' main.go
+          set -euo pipefail
+          sed -i 's/version \= \"local-build\"/version = \"'"${VERSION}"'\"/' main.go
           mkdir bin
           GOARCH=arm64 go build -ldflags="-s -w" -o bin/ios-arm64
           GOARCH=amd64 go build -ldflags="-s -w" -o bin/ios-amd64
-
-          cp ./mac-bin/go-ios-mac.zip .
-          cp ./win-bin/go-ios-win.zip .
+          ( cd mac-bin && unzip -o go-ios-mac.zip && rm go-ios-mac.zip && zip -j ../go-ios-mac.zip ios )
+          ( cd win-bin && unzip -o go-ios-windows.zip && zip -j ../go-ios-win.zip ios.exe )
           zip -j go-ios-linux.zip bin/ios-arm64 bin/ios-amd64
 
-      - uses: AButler/upload-release-assets@v2.0
+      - name: Update CHANGELOG, commit, and tag
+        env:
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          set -euo pipefail
+          DATE="$(date +%Y-%m-%d)"
+          printf '%s\n' "$RELEASE_NOTES" > /tmp/notes.md
+          # Insert a new "## [VERSION] - DATE" section just before the most recent
+          # released version (the first "## [x.y.z]" heading). This keeps any
+          # existing "## [Unreleased]" content under [Unreleased] instead of
+          # absorbing it into the new section.
+          awk -v hdr="## [${VERSION}] - ${DATE}" -v notesfile="/tmp/notes.md" '
+            /^## \[[0-9]/ && !done {
+              print hdr
+              print ""
+              while ((getline line < notesfile) > 0) print line
+              print ""
+              done = 1
+            }
+            { print }
+          ' CHANGELOG.md > CHANGELOG.new
+          mv CHANGELOG.new CHANGELOG.md
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "chore(release): v${VERSION}"
+          git push origin HEAD:main
+          git tag "v${VERSION}"
+          git push origin "v${VERSION}"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release create "v${VERSION}" \
+            go-ios-linux.zip go-ios-mac.zip go-ios-win.zip \
+            --title "v${VERSION}" \
+            --notes-file /tmp/notes.md
+
+      # OIDC trusted publishing needs Node >= 22.14.0 and npm >= 11.5.1.
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
-          files: "*.zip"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          release-tag: ${{ env.release_tag }}
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Publish NPM
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NODE_AUTH_TOKEN }}
         run: |
+          set -euo pipefail
+          npm install -g npm@latest
           mkdir ./npm_publish/dist
           mkdir ./npm_publish/dist/go-ios-darwin-amd64_darwin_amd64
           mkdir ./npm_publish/dist/go-ios-darwin-arm64_darwin_arm64
@@ -154,8 +223,50 @@ jobs:
           cp ./win-bin/ios.exe ./npm_publish/dist/go-ios-windows-amd64_windows_amd64/ios.exe
           cp ./bin/ios-amd64 ./npm_publish/dist/go-ios-linux-amd64_linux_amd64/ios
           cp ./bin/ios-arm64 ./npm_publish/dist/go-ios-linux-arm64_linux_arm64/ios
-          echo "//registry.npmjs.org/:_authToken=$NODE_AUTH_TOKEN" >> ~/.npmrc
+          cp ./README.md ./npm_publish
           cd npm_publish
-          sed -i 's/\"local-build\"/\"${{ env.release_tag }}\"/' package.json
+          sed -i 's/\"local-build\"/\"'"${VERSION}"'\"/' package.json
           npm install
+          # No NODE_AUTH_TOKEN / .npmrc auth line: npm authenticates via OIDC
+          # trusted publishing. Setting an (even empty) token would break OIDC.
           npm publish
+
+  # Post-publish smoke test: install the freshly released go-ios from the public
+  # registry on every OS and run the binary, asserting the version matches.
+  verify_install:
+    needs: [prepare_version, release_and_publish]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install published release and run it
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ needs.prepare_version.outputs.version }}
+        run: |
+          set -euo pipefail
+          # npm registry propagation to all replicas can lag well past a minute
+          # right after publish. Give it a 60s head start, then retry generously.
+          echo "waiting 60s for npm registry propagation before first install..."
+          sleep 60
+          for i in $(seq 1 12); do
+            if npm install -g "go-ios@${EXPECTED_VERSION}"; then
+              break
+            fi
+            echo "install attempt $i failed (version may not have propagated yet), retrying in 15s..."
+            sleep 15
+          done
+
+          OUTPUT="$(ios version 2>&1)"
+          echo "ios version output: $OUTPUT"
+          echo "$OUTPUT" | grep -q "\"version\":\"${EXPECTED_VERSION}\"" \
+            || { echo "::error::expected version ${EXPECTED_VERSION} not found in 'ios version' output"; exit 1; }
+          echo "OK: go-ios@${EXPECTED_VERSION} installed and runs on ${{ matrix.os }}"

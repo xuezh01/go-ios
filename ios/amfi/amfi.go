@@ -6,11 +6,13 @@ import (
 	"time"
 
 	"github.com/danielpaulus/go-ios/ios"
+	"github.com/danielpaulus/go-ios/ios/golog"
 	"github.com/danielpaulus/go-ios/ios/imagemounter"
-	log "github.com/sirupsen/logrus"
 )
 
 const serviceName string = "com.apple.amfi.lockdown"
+
+const logModule = "go-ios/amfi"
 
 type Connection struct {
 	deviceConn ios.DeviceConnectionInterface
@@ -32,6 +34,45 @@ func New(device ios.DeviceEntry) (*Connection, error) {
 
 func (devModeConn *Connection) Close() error {
 	return devModeConn.deviceConn.Close()
+}
+
+// RevealDevMode sends action 0 to the AMFI service, which makes the
+// Developer Mode toggle visible in Settings → Privacy & Security.
+// This replicates what Xcode does when it detects Developer Mode is disabled.
+func (devModeConn *Connection) RevealDevMode() error {
+	reader := devModeConn.deviceConn.Reader()
+
+	request := map[string]interface{}{"action": 0}
+
+	bytes, err := devModeConn.plistCodec.Encode(request)
+	if err != nil {
+		return fmt.Errorf("RevealDevMode: failed encoding request to service with err: %w", err)
+	}
+
+	err = devModeConn.deviceConn.Send(bytes)
+	if err != nil {
+		return fmt.Errorf("RevealDevMode: failed sending request bytes to service with err: %w", err)
+	}
+
+	responseBytes, err := devModeConn.plistCodec.Decode(reader)
+	if err != nil {
+		return fmt.Errorf("RevealDevMode: failed decoding response from service with err: %w", err)
+	}
+
+	plist, err := ios.ParsePlist(responseBytes)
+	if err != nil {
+		return fmt.Errorf("RevealDevMode: failed parsing response plist with err: %w", err)
+	}
+
+	if errorMsg, ok := plist["Error"]; ok {
+		return fmt.Errorf("RevealDevMode: could not reveal developer mode menu: %s", errorMsg)
+	}
+
+	if _, ok := plist["success"]; ok {
+		return nil
+	}
+
+	return fmt.Errorf("RevealDevMode: no error or success was reported")
 }
 
 // Enable developer mode on a device, e.g. after content reset
@@ -61,8 +102,8 @@ func (devModeConn *Connection) EnableDevMode() error {
 	}
 
 	// Check if we have an error returned by the service
-	if _, ok := plist["Error"]; ok {
-		return fmt.Errorf("EnableDevMode: could not enable developer mode through amfi service")
+	if errorMsg, ok := plist["Error"]; ok {
+		return fmt.Errorf("EnableDevMode: could not enable developer mode through amfi service with error: %s", errorMsg)
 	}
 
 	if _, ok := plist["success"]; ok {
@@ -114,7 +155,7 @@ func EnableDeveloperMode(device ios.DeviceEntry, enablePostRestart bool) error {
 	}
 
 	if devModeEnabled {
-		log.Info("Developer mode is already enabled on the device")
+		golog.Info("Developer mode is already enabled on the device", "module", logModule, "udid", device.Properties.SerialNumber)
 		return nil
 	}
 
@@ -126,12 +167,19 @@ func EnableDeveloperMode(device ios.DeviceEntry, enablePostRestart bool) error {
 
 	err = conn.EnableDevMode()
 	if err != nil {
-		return fmt.Errorf("EnableDeveloperMode: failed enabling developer mode with err: %w", err)
+		conn.Close()
+		// If ARM fails (e.g. passcode set), at least reveal the menu
+		revealConn, revealErr := New(device)
+		if revealErr == nil {
+			_ = revealConn.RevealDevMode()
+			revealConn.Close()
+		}
+		return fmt.Errorf("EnableDeveloperMode: failed enabling developer mode with err: %w (Developer Mode menu has been revealed in Settings)", err)
 	}
-	log.Infof("Successfully enabled developer mode on device `%s`, device will restart", device.Properties.SerialNumber)
+	golog.Info("Successfully enabled developer mode on device, device will restart", "module", logModule, "udid", device.Properties.SerialNumber)
 
 	udid := device.Properties.SerialNumber
-	log.Info("Waiting for device to restart after enabling developer mode")
+	golog.Info("Waiting for device to restart after enabling developer mode", "module", logModule, "udid", udid)
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
@@ -142,7 +190,7 @@ WaitLoop:
 		case <-ticker.C:
 			device, err = ios.GetDevice(udid)
 			if err != nil {
-				log.Info("Device is not yet available")
+				golog.Info("Device is not yet available", "module", logModule, "udid", udid)
 				continue WaitLoop
 			}
 			break WaitLoop
@@ -153,11 +201,11 @@ WaitLoop:
 			}
 		}
 	}
-	log.Info("Device was successfully restarted after enabling developer mode")
+	golog.Info("Device was successfully restarted after enabling developer mode", "module", logModule, "udid", udid)
 
 	// Try to also enable dev mode after the device restarts - skips the system popup that asks you to finalize dev mode enablement
 	if enablePostRestart {
-		log.Info("Will attempt to enable developer mode post restart")
+		golog.Info("Will attempt to enable developer mode post restart", "module", logModule, "udid", udid)
 		conn, err = New(device)
 		if err != nil {
 			return fmt.Errorf("EnableDeveloperMode: failed connecting to amfi service post restart with err: %w", err)
@@ -167,7 +215,7 @@ WaitLoop:
 		if err != nil {
 			return fmt.Errorf("EnableDeveloperMode: failed enabling developer mode post restart, you need to finish the set up manually through the popup on the device, err: %w", err)
 		}
-		log.Info("Successfully enabled developer mode on device post restart")
+		golog.Info("Successfully enabled developer mode on device post restart", "module", logModule, "udid", udid)
 	}
 
 	return nil
