@@ -261,6 +261,15 @@ commands:
   - path: uninstall
     usage: ios uninstall <bundleID> [options]
     summary: Uninstall app by bundle ID.
+  - path: webinspector list
+    usage: ios webinspector list [--timeout=<seconds>] [options]
+    summary: List inspectable Safari and WebView pages.
+  - path: webinspector eval
+    usage: ios webinspector eval <pageID> <expression> [--timeout=<seconds>] [options]
+    summary: Evaluate JavaScript in an inspectable page.
+  - path: webinspector cdp
+    usage: ios webinspector cdp [--host=<host>] [--port=<port>] [options]
+    summary: Start a Chrome DevTools Protocol bridge.
   - path: version
     usage: ios --version | version [options]
     summary: Print version.
