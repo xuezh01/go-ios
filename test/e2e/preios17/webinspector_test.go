@@ -1,6 +1,6 @@
 //go:build e2e
 
-package tunnel_test
+package preios17_test
 
 import (
 	"testing"
