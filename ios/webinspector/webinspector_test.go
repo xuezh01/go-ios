@@ -128,3 +128,23 @@ func TestAutomationSessionTimeoutErrorIsActionable(t *testing.T) {
 		t.Fatalf("error should include enablement instructions: %v", err)
 	}
 }
+
+func TestNormalizeStartupErrorMapsReadEOFToWebInspectorDisabled(t *testing.T) {
+	err := normalizeStartupError(errors.New("Read: failed to read message length: EOF"))
+	if !errors.Is(err, ErrWebInspectorDisabled) {
+		t.Fatalf("expected Web Inspector disabled error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "Settings > Safari > Advanced > Web Inspector") {
+		t.Fatalf("error should include enablement instructions: %v", err)
+	}
+}
+
+func TestNormalizeStartupErrorMapsShortWriteToWebInspectorDisabled(t *testing.T) {
+	err := normalizeStartupError(errors.New("Write: only 0 bytes were written instead of 372"))
+	if !errors.Is(err, ErrWebInspectorDisabled) {
+		t.Fatalf("expected Web Inspector disabled error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "Settings > Safari > Advanced > Web Inspector") {
+		t.Fatalf("error should include enablement instructions: %v", err)
+	}
+}

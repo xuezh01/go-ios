@@ -131,10 +131,10 @@ func NewWithConnection(device ios.DeviceEntry, conn ios.DeviceConnectionInterfac
 func (c *Client) Connect(ctx context.Context) error {
 	c.watchDisabledNotification()
 	if err := c.sendMessage("_rpc_reportIdentifier:", nil); err != nil {
-		return err
+		return normalizeStartupError(err)
 	}
 	go c.readLoop()
-	return c.GetConnectedApplications(ctx)
+	return normalizeStartupError(c.GetConnectedApplications(ctx))
 }
 
 func (c *Client) Close() error {
@@ -459,7 +459,8 @@ func (c *Client) readLoop() {
 		}
 		var message map[string]any
 		if err := c.plist.Read(&message); err != nil {
-			if !errors.Is(err, io.EOF) {
+			err = normalizeStartupError(err)
+			if !errors.Is(err, io.EOF) && !errors.Is(err, ErrWebInspectorDisabled) {
 				golog.Error("webinspector read failed", "module", logModule, "udid", c.device.Properties.SerialNumber, "error", err)
 			}
 			select {
@@ -472,6 +473,19 @@ func (c *Client) readLoop() {
 			golog.Warn("webinspector message ignored", "module", logModule, "udid", c.device.Properties.SerialNumber, "error", err, "message", fmt.Sprintf("%#v", message))
 		}
 	}
+}
+
+func normalizeStartupError(err error) error {
+	if err == nil {
+		return nil
+	}
+	message := strings.ToLower(err.Error())
+	if errors.Is(err, io.EOF) ||
+		strings.Contains(message, "failed to read message length: eof") ||
+		strings.Contains(message, "only 0 bytes were written") {
+		return ErrWebInspectorDisabled
+	}
+	return err
 }
 
 func (c *Client) handleMessage(message map[string]any) error {
