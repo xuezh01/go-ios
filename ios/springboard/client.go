@@ -27,6 +27,62 @@ func (c *Client) Close() error {
 	return c.connection.Close()
 }
 
+// GetHomeScreenWallpaperPNG returns the home screen wallpaper as PNG bytes.
+// This does not require supervision. iOS does not currently expose the lock
+// screen wallpaper through this service.
+func (c *Client) GetHomeScreenWallpaperPNG() ([]byte, error) {
+	err := c.plistCodec.Write(map[string]any{
+		"command": "getHomeScreenWallpaperPNGData",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("could not write plist: %w", err)
+	}
+	var response struct {
+		PNGData []byte `plist:"pngData"`
+	}
+	if err := c.plistCodec.Read(&response); err != nil {
+		return nil, fmt.Errorf("could not read plist: %w", err)
+	}
+	if len(response.PNGData) == 0 {
+		return nil, fmt.Errorf("device returned empty pngData")
+	}
+	return response.PNGData, nil
+}
+
+// GetIconLayout returns the home screen icon layout in its raw plist shape so
+// it can be saved as JSON, edited, and pushed back via SetIconLayout. Format
+// version "2" matches what cfgutil and pymobiledevice3 use; pass an empty
+// string for the legacy v1 layout.
+func (c *Client) GetIconLayout(formatVersion string) (any, error) {
+	cmd := map[string]any{"command": "getIconState"}
+	if formatVersion != "" {
+		cmd["formatVersion"] = formatVersion
+	}
+	if err := c.plistCodec.Write(cmd); err != nil {
+		return nil, fmt.Errorf("could not write plist: %w", err)
+	}
+	var response any
+	if err := c.plistCodec.Read(&response); err != nil {
+		return nil, fmt.Errorf("could not read plist: %w", err)
+	}
+	return response, nil
+}
+
+// SetIconLayout pushes a previously-fetched icon layout back to the device.
+// The state should be the value returned by GetIconLayout.
+func (c *Client) SetIconLayout(state any) error {
+	if state == nil {
+		state = map[string]any{}
+	}
+	if err := c.plistCodec.Write(map[string]any{
+		"command":   "setIconState",
+		"iconState": state,
+	}); err != nil {
+		return fmt.Errorf("could not write plist: %w", err)
+	}
+	return nil
+}
+
 // ListIcons provides the homescreen layout of the device
 func (c *Client) ListIcons() ([]Screen, error) {
 	err := c.plistCodec.Write(map[string]any{

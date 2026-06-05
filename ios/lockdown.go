@@ -3,7 +3,7 @@ package ios
 import (
 	"net"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 )
 
 // Lockdownport is the port of the always running lockdownd on the iOS device.
@@ -47,7 +47,7 @@ func (lockDownConn LockDownConnection) EnableSessionSslServerMode(pairRecord Pai
 func (lockDownConn LockDownConnection) Send(msg interface{}) error {
 	bytes, err := lockDownConn.plistCodec.Encode(msg)
 	if err != nil {
-		log.Error("failed lockdown send")
+		golog.Error("failed lockdown send", "module", logModule)
 		return err
 	}
 	return lockDownConn.deviceConnection.Send(bytes)

@@ -74,6 +74,31 @@ func TestErrors(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestGetUsbmuxdSocket(t *testing.T) {
+	cases := []struct {
+		name string
+		env  string
+		want string
+	}{
+		{"unix scheme as-is", "unix:///var/run/usbmuxd", "unix:///var/run/usbmuxd"},
+		{"tcp scheme as-is", "tcp://127.0.0.1:27015", "tcp://127.0.0.1:27015"},
+		{"uppercase scheme is lower-cased", "UNIX:///tmp/usbmuxd", "unix:///tmp/usbmuxd"},
+		{"hostname:port without scheme is tcp", "localhost:27015", "tcp://localhost:27015"},
+		{"ip:port without scheme is tcp", "127.0.0.1:27015", "tcp://127.0.0.1:27015"},
+		{"bare path is unix", "/tmp/usbmuxd", "unix:///tmp/usbmuxd"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("USBMUXD_SOCKET_ADDRESS", c.env)
+			got := ios.GetUsbmuxdSocket()
+			assert.Equal(t, c.want, got)
+			// The result must always be a scheme net.Dial accepts.
+			scheme, _ := ios.GetSocketTypeAndAddress(got)
+			assert.Contains(t, []string{"unix", "tcp"}, scheme)
+		})
+	}
+}
+
 type ReaderMock struct {
 	mock.Mock
 }

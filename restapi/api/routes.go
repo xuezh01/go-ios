@@ -33,10 +33,12 @@ func simpleDeviceRoutes(device *gin.RouterGroup) {
 	device.POST("/pair", PairDevice)
 	device.GET("/profiles", GetProfiles)
 
+	device.POST("/resetaccessibility", ResetAccessibility)
 	device.POST("/resetlocation", ResetLocation)
 	device.GET("/screenshot", Screenshot)
 	device.PUT("/setlocation", SetLocation)
 	device.GET("/syslog", streamingMiddleWare, Syslog)
+	device.GET("/ostrace", streamingMiddleWare, OsTrace)
 
 	device.POST("/wda/session", CreateWdaSession)
 	device.GET("/wda/session/:sessionId", ReadWdaSession)

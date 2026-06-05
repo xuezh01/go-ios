@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 )
 
 func GetSocketTypeAndAddress(socketAddress string) (string, string) {
@@ -32,11 +32,20 @@ func ToUnixSocketPath(socketAddress string) string {
 func GetUsbmuxdSocket() string {
 	socket_override := os.Getenv("USBMUXD_SOCKET_ADDRESS")
 	if socket_override != "" {
+		// An explicit scheme (e.g. unix:///var/run/usbmuxd or tcp://127.0.0.1:27015)
+		// is honored as-is. The scheme is lower-cased because it is passed straight
+		// to net.Dial, which rejects e.g. "UNIX" — this is what lets
+		// USBMUXD_SOCKET_ADDRESS=UNIX:///tmp/usbmuxd work.
+		if i := strings.Index(socket_override, "://"); i >= 0 {
+			return strings.ToLower(socket_override[:i]) + socket_override[i:]
+		}
+		// No scheme: fall back to the original heuristic for backward compatibility
+		// — a ":" means host:port (tcp, incl. hostname:port), anything else is a
+		// unix socket path.
 		if strings.Contains(socket_override, ":") {
 			return "tcp://" + socket_override
-		} else {
-			return "unix://" + socket_override
 		}
+		return "unix://" + socket_override
 	}
 	switch runtime.GOOS {
 	case "windows":
@@ -104,7 +113,7 @@ func (muxConn *UsbMuxConnection) Send(msg interface{}) error {
 	muxConn.tag++
 	err := muxConn.encode(msg, writer)
 	if err != nil {
-		log.Error("Error sending mux")
+		golog.Error("Error sending mux", "module", logModule, "conn", &muxConn.deviceConn)
 		return err
 	}
 	return nil
@@ -141,7 +150,7 @@ func (muxConn *UsbMuxConnection) ReadMessage() (UsbMuxMessage, error) {
 
 // encode serializes a MuxMessage struct to a Plist and writes it to the io.Writer.
 func (muxConn *UsbMuxConnection) encode(message interface{}, writer io.Writer) error {
-	log.Tracef("UsbMux send %v  on  %v", reflect.TypeOf(message), &muxConn.deviceConn)
+	golog.Trace("UsbMux send", "module", logModule, "conn", &muxConn.deviceConn, "type", reflect.TypeOf(message))
 	mbytes := ToPlistBytes(message)
 	err := writeHeader(len(mbytes), muxConn.tag, writer)
 	if err != nil {
@@ -171,7 +180,7 @@ func (muxConn UsbMuxConnection) decode(r io.Reader) (UsbMuxMessage, error) {
 	if err != nil {
 		return UsbMuxMessage{}, fmt.Errorf("Error '%s' while reading usbmux package. Only %d bytes received instead of %d", err.Error(), n, muxHeader.Length-16)
 	}
-	log.Tracef("UsbMux Receive on %v", &muxConn.deviceConn)
+	golog.Trace("UsbMux Receive", "module", logModule, "conn", &muxConn.deviceConn)
 
 	return UsbMuxMessage{muxHeader, payloadBytes}, nil
 }

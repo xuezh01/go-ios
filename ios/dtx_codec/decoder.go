@@ -6,8 +6,7 @@ import (
 	"fmt"
 	"io"
 
-	log "github.com/sirupsen/logrus"
-
+	"github.com/danielpaulus/go-ios/ios/golog"
 	"github.com/danielpaulus/go-ios/ios/nskeyedarchiver"
 )
 
@@ -216,9 +215,9 @@ func (d Message) parsePayloadBytes(messageBytes []byte) ([]interface{}, error) {
 	if d.PayloadHeader.MessageType == LZ4CompressedMessage {
 		uncompressed, err := Decompress(messageBytes[offset:])
 		if err == nil {
-			log.Infof("lz4 compressed %d bytes/ %d uncompressed ", len(messageBytes[offset:]), len(uncompressed))
+			golog.Info("lz4 decompressed message", "module", logModule, "compressed", len(messageBytes[offset:]), "uncompressed", len(uncompressed))
 		} else {
-			log.Infof("skipping lz4 compressed msg with %d bytes, decompression error %v", len(messageBytes[offset:]), err)
+			golog.Info("skipping lz4 compressed msg", "module", logModule, "bytes", len(messageBytes[offset:]), "error", err)
 		}
 		return []interface{}{messageBytes[offset:]}, nil
 	}

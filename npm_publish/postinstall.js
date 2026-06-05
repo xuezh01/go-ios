@@ -40,7 +40,13 @@ async function getInstallationPath() {
         // Ex: /Users/foo/.nvm/versions/node/v4.3.0
         var env = process.env;
         if (env && env.npm_config_prefix) {
-            dir = path.join(env.npm_config_prefix, "bin");
+            // On Windows npm's global prefix IS the bin dir (executables/shims
+            // live directly in %AppData%\npm, which is what's on PATH). On
+            // Linux/macOS executables go in <prefix>/bin. Appending "bin" on
+            // Windows puts the binary in a folder that isn't on PATH.
+            dir = process.platform === "win32"
+                ? env.npm_config_prefix
+                : path.join(env.npm_config_prefix, "bin");
         }
     } else {
         dir = value.trim();

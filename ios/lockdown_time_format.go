@@ -1,7 +1,10 @@
 package ios
 
-import log "github.com/sirupsen/logrus"
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/danielpaulus/go-ios/ios/golog"
+)
 
 const uses24HourClockKey = "Uses24HourClock"
 
@@ -15,7 +18,7 @@ func SetUses24HourClock(device DeviceEntry, enabled bool) error {
 	if err != nil {
 		return err
 	}
-	log.Debugf("Setting %s: %t", uses24HourClockKey, enabled)
+	golog.Debug("setting lockdown value", "module", logModule, "udid", device.Properties.SerialNumber, "key", uses24HourClockKey, "enabled", enabled)
 	defer lockDownConn.Close()
 	err = lockDownConn.SetValueForDomain(uses24HourClockKey, "", enabled)
 	return err

@@ -9,12 +9,14 @@ import (
 	"testing"
 
 	"github.com/Masterminds/semver"
+	"github.com/danielpaulus/go-ios/ios/golog"
 	"github.com/danielpaulus/go-ios/ios/nskeyedarchiver"
 	archiver "github.com/danielpaulus/go-ios/ios/nskeyedarchiver"
 	"github.com/google/uuid"
-	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
+
+const logModule = "go-ios/nskeyedarchiver"
 
 func TestArchiveSlice(t *testing.T) {
 	option := make(map[string]interface{})
@@ -34,161 +36,184 @@ func TestArchiveSlice(t *testing.T) {
 	fmt.Print(val)
 }
 
+func TestArchiveUnsupportedObjectReturnsError(t *testing.T) {
+	type unsupportedObject struct {
+		Value string
+	}
+
+	testCases := []struct {
+		name   string
+		object interface{}
+	}{
+		{name: "unknown struct", object: unsupportedObject{Value: "not encodable"}},
+		{name: "nil", object: nil},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, err := archiver.ArchiveXML(testCase.object)
+
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "unsupported object")
+		})
+	}
+}
+
 // TODO currently only partially decoding XCTestConfig is supported, fix later
 func TestXCTestconfig(t *testing.T) {
 	uuid := uuid.New()
 	config := nskeyedarchiver.NewXCTestConfiguration("productmodulename", uuid, "targetAppBundle", "targetAppPath", "testBundleUrl", nil, nil, false, semver.MustParse("17.0.0"))
 	result, err := nskeyedarchiver.ArchiveXML(config)
 	if err != nil {
-		log.Error(err)
+		golog.Error("error reading or processing fixture", "module", logModule, "error", err)
 		t.Fatal()
 	}
 	fmt.Print(result)
-	log.Info(uuid.String())
+	golog.Info("generated uuid", "module", logModule, "uuid", uuid.String())
 	res, err := nskeyedarchiver.Unarchive([]byte(result))
 	assert.NoError(t, err)
-	log.Info(res)
+	golog.Info("unarchived object", "module", logModule, "object", res)
 
 	nskeyedBytes, err := os.ReadFile("fixtures/xctestconfiguration.bin")
 	if err != nil {
-		log.Error(err)
+		golog.Error("error reading or processing fixture", "module", logModule, "error", err)
 		t.Fatal()
 	}
 
 	unarchivedObject, err := archiver.Unarchive(nskeyedBytes)
 	assert.NoError(t, err)
-	log.Info(unarchivedObject)
+	golog.Info("unarchived object", "module", logModule, "object", unarchivedObject)
 }
 
 func TestXCTCaps(t *testing.T) {
 	nskeyedBytes, err := os.ReadFile("fixtures/XCTCapabilities.bin")
 	if err != nil {
 
-		log.Error(err)
+		golog.Error("error reading or processing fixture", "module", logModule, "error", err)
 		t.Fatal()
 	}
 
 	unarchivedObject, err := archiver.Unarchive(nskeyedBytes)
 	assert.NoError(t, err)
-	log.Info(unarchivedObject)
+	golog.Info("unarchived object", "module", logModule, "object", unarchivedObject)
 }
 
 func TestDTCPUClusterInfo(t *testing.T) {
 	nskeyedBytes, err := os.ReadFile("fixtures/dtcpuclusterinfo.bin")
 	if err != nil {
-		log.Error(err)
+		golog.Error("error reading or processing fixture", "module", logModule, "error", err)
 		t.Fatal()
 	}
 	unarchivedObject, err := archiver.Unarchive(nskeyedBytes)
 	assert.NoError(t, err)
-	log.Info(unarchivedObject)
+	golog.Info("unarchived object", "module", logModule, "object", unarchivedObject)
 }
 
 func TestDTTapMessage(t *testing.T) {
 	nskeyedBytes, err := os.ReadFile("fixtures/dttapmessage.bin")
 	if err != nil {
-		log.Error(err)
+		golog.Error("error reading or processing fixture", "module", logModule, "error", err)
 		t.Fatal()
 	}
 	unarchivedObject, err := archiver.Unarchive(nskeyedBytes)
 	assert.NoError(t, err)
-	log.Info(unarchivedObject)
+	golog.Info("unarchived object", "module", logModule, "object", unarchivedObject)
 }
 
 func TestDTSysmonTap(t *testing.T) {
 	nskeyedBytes, err := os.ReadFile("fixtures/DTSysmonTapMessage.bin")
 	if err != nil {
 
-		log.Error(err)
+		golog.Error("error reading or processing fixture", "module", logModule, "error", err)
 		t.Fatal()
 	}
 
 	unarchivedObject, err := archiver.Unarchive(nskeyedBytes)
 	assert.NoError(t, err)
-	log.Info(unarchivedObject)
+	golog.Info("unarchived object", "module", logModule, "object", unarchivedObject)
 }
 
 func TestNSUUID(t *testing.T) {
 	nskeyedBytes, err := os.ReadFile("fixtures/nsuuid.bin")
 	if err != nil {
-		log.Error(err)
+		golog.Error("error reading or processing fixture", "module", logModule, "error", err)
 		t.Fatal()
 	}
 
 	unarchivedObject, err := archiver.Unarchive(nskeyedBytes)
 	assert.NoError(t, err)
-	log.Info(unarchivedObject)
+	golog.Info("unarchived object", "module", logModule, "object", unarchivedObject)
 }
 
 func TestXCTestIdentifier(t *testing.T) {
 	nskeyedBytes, err := os.ReadFile("fixtures/xctestidentifier.bin")
 	if err != nil {
-		log.Error(err)
+		golog.Error("error reading or processing fixture", "module", logModule, "error", err)
 		t.Fatal()
 	}
 
 	unarchivedObject, err := archiver.Unarchive(nskeyedBytes)
 	assert.NoError(t, err)
-	log.Info(unarchivedObject)
+	golog.Info("unarchived object", "module", logModule, "object", unarchivedObject)
 }
 
 func TestNSValue(t *testing.T) {
 	nskeyedBytes, err := os.ReadFile("fixtures/nsvalue.bin")
 	if err != nil {
-		log.Error(err)
+		golog.Error("error reading or processing fixture", "module", logModule, "error", err)
 		t.Fatal()
 	}
 	unarchivedObject, err := archiver.Unarchive(nskeyedBytes)
 	assert.NoError(t, err)
-	log.Info(unarchivedObject)
+	golog.Info("unarchived object", "module", logModule, "object", unarchivedObject)
 }
 
 func TestWTF(t *testing.T) {
 	nskeyedBytes, err := os.ReadFile("fixtures/int64-value-in-nskeyedarchive.bin")
 	if err != nil {
-		log.Error(err)
+		golog.Error("error reading or processing fixture", "module", logModule, "error", err)
 		t.Fatal()
 	}
 
 	unarchivedObject, err := archiver.Unarchive(nskeyedBytes)
 	assert.NoError(t, err)
-	log.Info(unarchivedObject)
+	golog.Info("unarchived object", "module", logModule, "object", unarchivedObject)
 }
 
 func TestXCActivityRecord(t *testing.T) {
 	nskeyedBytes, err := os.ReadFile("fixtures/XCActivityRecord.bin")
 	if err != nil {
-		log.Error(err)
+		golog.Error("error reading or processing fixture", "module", logModule, "error", err)
 		t.Fatal()
 	}
 
 	unarchivedObject, err := archiver.Unarchive(nskeyedBytes)
 	assert.NoError(t, err)
-	log.Info(unarchivedObject)
+	golog.Info("unarchived object", "module", logModule, "object", unarchivedObject)
 }
 
 func TestDTTapHeartbeatMessage(t *testing.T) {
 	nskeyedBytes, err := os.ReadFile("fixtures/DTTapHeartbeatMessage.bin")
 	if err != nil {
-		log.Error(err)
+		golog.Error("error reading or processing fixture", "module", logModule, "error", err)
 		t.Fatal()
 	}
 
 	unarchivedObject, err := archiver.Unarchive(nskeyedBytes)
 	assert.NoError(t, err)
-	log.Info(unarchivedObject)
+	golog.Info("unarchived object", "module", logModule, "object", unarchivedObject)
 }
 
 func TestDTTapstatusmessage(t *testing.T) {
 	nskeyedBytes, err := os.ReadFile("fixtures/dttapstatusmessage.bin")
 	if err != nil {
-		log.Error(err)
+		golog.Error("error reading or processing fixture", "module", logModule, "error", err)
 		t.Fatal()
 	}
 
 	unarchivedObject, err := archiver.Unarchive(nskeyedBytes)
 	assert.NoError(t, err)
-	log.Info(unarchivedObject)
+	golog.Info("unarchived object", "module", logModule, "object", unarchivedObject)
 }
 
 // TODO currently uint64 dicts are decoded by converting the keys to strings, might wanna fix this later
@@ -200,7 +225,7 @@ func TestIntKeyDictionary(t *testing.T) {
 
 	unarchivedObject, err := archiver.Unarchive(nskeyedBytes)
 	assert.NoError(t, err)
-	log.Info(unarchivedObject)
+	golog.Info("unarchived object", "module", logModule, "object", unarchivedObject)
 }
 
 func TestArchiverStringArray(t *testing.T) {
@@ -233,7 +258,7 @@ func TestNSDate(t *testing.T) {
 
 	unarchivedObject, err := archiver.Unarchive(nskeyedBytes)
 	assert.NoError(t, err)
-	log.Info(unarchivedObject)
+	golog.Info("unarchived object", "module", logModule, "object", unarchivedObject)
 }
 
 func TestNSNull(t *testing.T) {
@@ -244,7 +269,7 @@ func TestNSNull(t *testing.T) {
 
 	unarchivedObject, _ := archiver.Unarchive(nskeyedBytes)
 	assert.Equal(t, reflect.TypeOf(unarchivedObject[0]).Name(), "NSNull")
-	log.Info(unarchivedObject[0])
+	golog.Info("unarchived object", "module", logModule, "object", unarchivedObject[0])
 	expected := "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\"><dict><key>$archiver</key><string>NSKeyedArchiver</string><key>$objects</key><array><string>$null</string><dict><key>$class</key><dict><key>CF$UID</key><integer>2</integer></dict></dict><dict><key>$classes</key><array><string>NSNull</string><string>NSObject</string></array><key>$classname</key><string>NSNull</string></dict></array><key>$top</key><dict><key>root</key><dict><key>CF$UID</key><integer>1</integer></dict></dict><key>$version</key><integer>100000</integer></dict></plist>"
 	xml, err := archiver.ArchiveXML(unarchivedObject[0])
 	if assert.NoError(t, err) {

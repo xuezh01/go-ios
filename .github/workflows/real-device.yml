@@ -1,131 +1,92 @@
 on:
-  workflow_dispatch:
+  # Reusable: called by the Unit tests workflow after the unit jobs pass, and by
+  # the comment-triggered workflow for fork PRs (with an explicit ref).
+  workflow_call:
     inputs:
-      ngrok:
-        description: 'ngrok host:port'
-        required: true
+      ref:
+        description: Git ref or SHA to check out (e.g. refs/pull/<n>/merge). Empty = the triggering ref.
+        type: string
+        required: false
         default: ''
-      udid:
-        description: 'device udid'
-        required: true
-        default: ''
-# run this locally to get a device exposed on ngrok
-# ngrok tcp 9999
-# socat TCP-LISTEN:9999,reuseaddr,fork UNIX-CONNECT:/var/run/usbmuxd
+  # Also runnable on its own (e.g. against a branch or main).
+  workflow_dispatch:
 
 name: CI Real Device Test
+
+# Least privilege: the job only checks out code and runs tests.
+permissions:
+  contents: read
+
 jobs:
-  sign_app_on_mac:
-    runs-on: macos-latest
+  e2e:
+    name: e2e (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Each self-hosted runner has its own attached device(s), so each row
+          # points at its own repo variables.
+          - os: macOS
+            devices: GO_IOS_E2E_DEVICES
+            tunnel_devices: GO_IOS_E2E_TUNNEL_DEVICES
+            preios17_devices: GO_IOS_E2E_PREIOS17_DEVICES
+          - os: Linux
+            devices: GO_IOS_E2E_LINUX_DEVICES
+            tunnel_devices: GO_IOS_E2E_LINUX_TUNNEL_DEVICES
+            preios17_devices: GO_IOS_E2E_LINUX_PREIOS17_DEVICES
+    runs-on: [self-hosted, "${{ matrix.os }}"]
     steps:
-      - uses: actions/checkout@v3
-      - name: create profile
-        run: |
-          echo "$P12_FILE" | base64 --decode > testdata/test1.p12
-          echo "$PROFILE" | base64 --decode > testdata/test1.mobileprovision
-        shell: bash
-        env:
-          P12_FILE: ${{ secrets.P12 }}
-          PROFILE: ${{ secrets.PROFILE }}
-
-      - name: Run App Signer
-        run: |
-          testdata/app-signer-mac --udid=$UDID --p12password=$P12_PW --profilespath=testdata --ipa=testdata/wda.ipa --output=testdata/wda-signed.ipa
-        env:
-          P12_PW: ${{secrets.P12PASSWORD}}
-          UDID: ${{ github.event.inputs.udid }}
-
-      - name: Delete profiles
-        if: always()
-        run: |
-          rm testdata/test1*
-
-      - name: upload the macos build
-        uses: actions/upload-artifact@v4
+      - uses: actions/checkout@v6
         with:
-          name: signed-wda
-          path: testdata/wda-signed.ipa
-          retention-days: 1
-          overwrite: true
-
-  test_on_windows:
-    runs-on: windows-latest
-    needs: sign_app_on_mac
-    env:
-      UDID: ${{ github.event.inputs.udid }}
-    steps:
-      - uses: actions/checkout@v3
+          ref: ${{ inputs.ref }}
 
       - name: Install Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
 
-      - name: compile
-        run: go build
-      - name: Download mac signed wda from previous job
-        uses: actions/download-artifact@v4
-        with:
-          name: signed-wda
-
-      - name:
-          extract ipa #github auto zips artifacts after a workflow is complete so we need to unzip the ipa
-          #as it is now double zipped
-        run: Expand-Archive -Force wda-signed.ipa testdata/signed-wda.ipa
-
-      - name: forward ngrok
-        run: netsh interface portproxy add v4tov4 listenaddress=127.0.0.1 listenport=27015 connectaddress=$($env:NGROK_URL.Split(":")[0]) connectport=$($env:NGROK_URL.Split(":")[1])
+      - name: Prepare App Store Connect API key
         env:
-          NGROK_URL: ${{ github.event.inputs.ngrok }}
-
-      - name: test list
-        run: go run main.go list
-
-      - name: install relative
-        run: go run main.go install --path testdata\signed-wda.ipa --udid=$($env:UDID)
-
-      - name: install absolute
-        run: go run main.go install --path $PWD\testdata\signed-wda.ipa --udid=$($env:UDID)
-
-  test_on_linux:
-    runs-on: ubuntu-latest
-    env:
-      UDID: ${{ github.event.inputs.udid }}
-    needs:
-      - sign_app_on_mac
-      - test_on_windows
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Install Go
-        uses: actions/setup-go@v3
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Download mac release from previous job
-        uses: actions/download-artifact@v4
-        with:
-          name: signed-wda
-
-      - name: extract
+          GO_IOS_E2E_ASC_PRIVATE_KEY_B64: ${{ secrets.GO_IOS_E2E_ASC_PRIVATE_KEY_B64 }}
         run: |
-          mv wda-signed.ipa testdata/signed-wda.ipa
+          mkdir -p "$RUNNER_TEMP/go-ios-e2e"
+          printf '%s' "$GO_IOS_E2E_ASC_PRIVATE_KEY_B64" | base64 --decode > "$RUNNER_TEMP/go-ios-e2e/AuthKey.p8"
+          echo "GO_IOS_E2E_ASC_PRIVATE_KEY=$RUNNER_TEMP/go-ios-e2e/AuthKey.p8" >> "$GITHUB_ENV"
 
-      - name: compile
-        run: go build
-
-      - name: install socat
-        run: sudo apt install socat
-
-      - name: ngrok
-        run: sudo socat UNIX-LISTEN:/var/run/usbmuxd,fork,mode=777 TCP-CONNECT:$NGROK_URL&
+      # Commands served over the classic lockdown/usbmux services. These work on
+      # every device regardless of iOS version.
+      - name: E2E tunnel-free
         env:
-          NGROK_URL: ${{ github.event.inputs.ngrok }}
+          GO_IOS_E2E_DEVICES: ${{ vars[matrix.devices] }}
+          GO_IOS_E2E_ASC_KEY_ID: ${{ secrets.GO_IOS_E2E_ASC_KEY_ID }}
+          GO_IOS_E2E_ASC_ISSUER_ID: ${{ secrets.GO_IOS_E2E_ASC_ISSUER_ID }}
+          GO_IOS_E2E_WDA_ARTIFACT_URL: ${{ vars.GO_IOS_E2E_WDA_ARTIFACT_URL }}
+          GO_IOS_E2E_DEVICEKIT_ARTIFACT_URL: ${{ vars.GO_IOS_E2E_DEVICEKIT_ARTIFACT_URL }}
+          GO_IOS_E2E_WDA_BUNDLE_ID: ${{ vars.GO_IOS_E2E_WDA_BUNDLE_ID }}
+          GO_IOS_E2E_WDA_XCTEST_CONFIG: ${{ vars.GO_IOS_E2E_WDA_XCTEST_CONFIG }}
+          GO_IOS_E2E_WDA_URL: ${{ vars.GO_IOS_E2E_WDA_URL }}
+          GO_IOS_E2E_WDA_URLS: ${{ vars.GO_IOS_E2E_WDA_URLS }}
+          GO_IOS_E2E_DEVICEKIT_URL: ${{ vars.GO_IOS_E2E_DEVICEKIT_URL }}
+          GO_IOS_E2E_DEVICEKIT_URLS: ${{ vars.GO_IOS_E2E_DEVICEKIT_URLS }}
+        run: go test -tags=e2e -count=1 -v ./test/e2e/
 
-      - name: test list
-        run: go run main.go list
+      # Commands that need the iOS 17+ tunnel (RemoteServiceDiscovery /
+      # CoreDevice / instruments) plus a mounted Developer Disk Image and
+      # Developer Mode on the device. Targets its own device list and is skipped
+      # when empty. Requires the `ios tunnel` daemon running on the runner host.
+      - name: E2E tunnel (iOS 17+)
+        if: ${{ !cancelled() && vars[matrix.tunnel_devices] != '' }}
+        env:
+          GO_IOS_E2E_DEVICES: ${{ vars[matrix.tunnel_devices] }}
+        run: go test -tags=e2e -count=1 -v ./test/e2e/tunnel/
 
-      - name: install relative
-        run: go run main.go install --path testdata/signed-wda.ipa --udid=$UDID
+      # Pre-iOS17 devices serve the entire go-ios feature set — including the
+      # instruments/DTX commands (ps, screenshot, launch/kill) that need the
+      # tunnel on iOS 17+ — over usbmuxd with only a mounted Developer Disk Image
+      # and no tunnel. Targets its own device list and is skipped when empty.
+      - name: E2E pre-iOS17 (tunnel-free, DDI)
+        if: ${{ !cancelled() && vars[matrix.preios17_devices] != '' }}
+        env:
+          GO_IOS_E2E_DEVICES: ${{ vars[matrix.preios17_devices] }}
+        run: go test -tags=e2e -count=1 -v ./test/e2e/preios17/

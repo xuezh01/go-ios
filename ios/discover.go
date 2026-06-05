@@ -3,11 +3,10 @@ package ios
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net"
 
+	"github.com/danielpaulus/go-ios/ios/golog"
 	"github.com/grandcat/zeroconf"
-	log "github.com/sirupsen/logrus"
 )
 
 // FindDeviceInterfaceAddress tries to find the address of the device by browsing through all network interfaces.
@@ -28,9 +27,7 @@ func FindDeviceInterfaceAddress(ctx context.Context, device DeviceEntry) (string
 	for _, iface := range ifaces {
 		resolver, err := zeroconf.NewResolver(zeroconf.SelectIfaces([]net.Interface{iface}), zeroconf.SelectIPTraffic(zeroconf.IPv6))
 		if err != nil {
-			log.WithField("interface", iface.Name).
-				WithField("err", err).
-				Debug("failed to initialize resolver")
+			golog.Debug("failed to initialize resolver", "module", logModule, "udid", device.Properties.SerialNumber, "interface", iface.Name, "err", err)
 			continue
 		}
 		entries := make(chan *zeroconf.ServiceEntry)
@@ -43,7 +40,7 @@ func FindDeviceInterfaceAddress(ctx context.Context, device DeviceEntry) (string
 	case <-ctx.Done():
 		return "", ctx.Err()
 	case r := <-result:
-		log.WithField("udid", device.Properties.SerialNumber).WithField("address", r).Debug("found device address")
+		golog.Debug("found device address", "module", logModule, "udid", device.Properties.SerialNumber, "address", r)
 		return r, nil
 	}
 }
@@ -71,7 +68,7 @@ func tryHandshake(ctx context.Context, ip6 net.IP, port int, interfaceName strin
 	s, err := NewWithAddrPortDevice(addr, port, device)
 	udid := device.Properties.SerialNumber
 	if err != nil {
-		slog.Error("failed to connect to remote service discovery", "error", err, "address", addr)
+		golog.Error("failed to connect to remote service discovery", "module", logModule, "udid", udid, "error", err, "address", addr)
 		return
 	}
 	defer s.Close()
@@ -82,7 +79,7 @@ func tryHandshake(ctx context.Context, ip6 net.IP, port int, interfaceName strin
 	if udid == h.Udid {
 		select {
 		case <-ctx.Done():
-			slog.Error("failed sending handshake result", "error", ctx.Err())
+			golog.Error("failed sending handshake result", "module", logModule, "udid", udid, "error", ctx.Err())
 		case result <- addr:
 		}
 	}

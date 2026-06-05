@@ -10,7 +10,8 @@ import (
 )
 
 type buildManifest struct {
-	BuildIdentities []buildIdentity
+	ProductBuildVersion string `plist:"ProductBuildVersion"`
+	BuildIdentities     []buildIdentity
 }
 
 func loadBuildManifest(p string) (buildManifest, error) {
@@ -37,23 +38,21 @@ func (m buildManifest) findIdentity(identifiers personalizationIdentifiers) (bui
 	return buildIdentity{}, fmt.Errorf("findIdentity: failed to find identity for ApBoardId 0x%x and ApChipId 0x%x", identifiers.BoardId, identifiers.ChipID)
 }
 
+type manifestEntry struct {
+	Digest  []byte
+	Trusted bool `plist:"Trusted"`
+	EPRO    bool `plist:"EPRO"`
+	ESEC    bool `plist:"ESEC"`
+	Name    string
+	Info    struct {
+		Path string
+	}
+}
+
 type buildIdentity struct {
 	BoardID  string `plist:"ApBoardID"`
 	ChipID   string `plist:"ApChipID"`
-	Manifest struct {
-		LoadableTrustCache struct {
-			Digest []byte
-			Info   struct {
-				Path string
-			}
-		}
-		PersonalizedDmg struct {
-			Digest []byte
-			Info   struct {
-				Path string
-			}
-		} `plist:"PersonalizedDMG"`
-	}
+	Manifest map[string]manifestEntry
 }
 
 func (b buildIdentity) ApBoardID() int {
@@ -62,6 +61,23 @@ func (b buildIdentity) ApBoardID() int {
 
 func (b buildIdentity) ApChipID() int {
 	return hexToInt(b.ChipID)
+}
+
+func (b buildIdentity) dmgPath() string {
+	if entry, ok := b.Manifest["PersonalizedDMG"]; ok {
+		return entry.Info.Path
+	}
+	if entry, ok := b.Manifest["PersonalizedDmg"]; ok {
+		return entry.Info.Path
+	}
+	return ""
+}
+
+func (b buildIdentity) trustCachePath() string {
+	if entry, ok := b.Manifest["LoadableTrustCache"]; ok {
+		return entry.Info.Path
+	}
+	return ""
 }
 
 type personalizationIdentifiers struct {

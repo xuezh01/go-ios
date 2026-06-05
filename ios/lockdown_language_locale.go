@@ -1,6 +1,6 @@
 package ios
 
-import log "github.com/sirupsen/logrus"
+import "github.com/danielpaulus/go-ios/ios/golog"
 
 // LanguageConfiguration is a simple struct encapsulating a language and locale string
 type LanguageConfiguration struct {
@@ -19,7 +19,7 @@ const languageDomain = "com.apple.international"
 // If you need to wait for this happen use notificationproxy.WaitUntilSpringboardStarted().
 func SetLanguage(device DeviceEntry, config LanguageConfiguration) error {
 	if config.Locale == "" && config.Language == "" {
-		log.Debug("SetLanguage called with empty config, no changes made")
+		golog.Debug("SetLanguage called with empty config, no changes made", "module", logModule, "udid", device.Properties.SerialNumber)
 		return nil
 	}
 	lockDownConn, err := ConnectLockdownWithSession(device)
@@ -28,14 +28,14 @@ func SetLanguage(device DeviceEntry, config LanguageConfiguration) error {
 	}
 	defer lockDownConn.Close()
 	if config.Locale != "" {
-		log.Debugf("Setting locale: %s", config.Locale)
+		golog.Debug("setting locale", "module", logModule, "udid", device.Properties.SerialNumber, "locale", config.Locale)
 		err := lockDownConn.SetValueForDomain("Locale", languageDomain, config.Locale)
 		if err != nil {
 			return err
 		}
 	}
 	if config.Language != "" {
-		log.Debugf("Setting language: %s", config.Language)
+		golog.Debug("setting language", "module", logModule, "udid", device.Properties.SerialNumber, "language", config.Language)
 		return lockDownConn.SetValueForDomain("Language", languageDomain, config.Language)
 	}
 	return nil

@@ -3,12 +3,13 @@ package ios
 import (
 	"crypto/tls"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"net"
 	"strings"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 )
 
 // DeviceConnectionInterface contains a physical network connection to a usbmuxd socket.
@@ -82,10 +83,10 @@ func (conn *DeviceConnectionRWC) Reader() io.Reader {
 func (conn *DeviceConnectionRWC) Send(message []byte) error {
 	n, err := conn.c.Write(message)
 	if n < len(message) {
-		log.Errorf("DeviceConnection failed writing %d bytes, only %d sent", len(message), n)
+		golog.Error("DeviceConnection failed writing all bytes", "module", logModule, "conn", &conn.c, "expected", len(message), "sent", n)
 	}
 	if err != nil {
-		log.Errorf("Failed sending: %s", err)
+		golog.Error("Failed sending", "module", logModule, "conn", &conn.c, "error", err)
 		conn.Close()
 		return err
 	}
@@ -141,14 +142,14 @@ func (conn *DeviceConnection) connectToSocketAddress(socketAddress string) error
 	if err != nil {
 		return err
 	}
-	log.Tracef("Opening connection: %v", &c)
+	golog.Trace("Opening connection", "module", logModule, "conn", &c)
 	conn.c = c
 	return nil
 }
 
 // Close closes the network connection
 func (conn *DeviceConnection) Close() error {
-	log.Tracef("Closing connection: %v", &conn.c)
+	golog.Trace("Closing connection", "module", logModule, "conn", &conn.c)
 	return conn.c.Close()
 }
 
@@ -156,10 +157,10 @@ func (conn *DeviceConnection) Close() error {
 func (conn *DeviceConnection) Send(bytes []byte) error {
 	n, err := conn.c.Write(bytes)
 	if n < len(bytes) {
-		log.Errorf("DeviceConnection failed writing %d bytes, only %d sent", len(bytes), n)
+		golog.Error("DeviceConnection failed writing all bytes", "module", logModule, "conn", &conn.c, "expected", len(bytes), "sent", n)
 	}
 	if err != nil {
-		log.Errorf("Failed sending: %s", err)
+		golog.Error("Failed sending", "module", logModule, "conn", &conn.c, "error", err)
 		conn.Close()
 		return err
 	}
@@ -190,7 +191,7 @@ func (conn *DeviceConnection) DisableSessionSSL() {
 	// First send a close write
 	err := conn.c.(*tls.Conn).CloseWrite()
 	if err != nil {
-		log.Errorf("failed closewrite %v", err)
+		golog.Error("failed closewrite", "module", logModule, "conn", &conn.c, "error", err)
 	}
 	// Use the underlying conn again to receive unencrypted bytes
 	conn.c = conn.unencryptedConn
@@ -199,7 +200,7 @@ func (conn *DeviceConnection) DisableSessionSSL() {
 	// we need to undo that
 	err = conn.c.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	if err != nil {
-		log.Errorf("failed setting writedeadline after TLS disable:%v", err)
+		golog.Error("failed setting writedeadline after TLS disable", "module", logModule, "conn", &conn.c, "error", err)
 	}
 	/*read the first 5 bytes of the SSL encrypted CLOSE message we get.
 	Because it is a Close message, we can throw it away. We cannot forward it to the client though, because
@@ -210,17 +211,17 @@ func (conn *DeviceConnection) DisableSessionSSL() {
 
 	_, err = io.ReadFull(conn.c, header)
 	if err != nil {
-		log.Errorf("failed readfull %v", err)
+		golog.Error("failed readfull", "module", logModule, "conn", &conn.c, "error", err)
 	}
-	log.Tracef("rcv tls header: %x", header)
+	golog.Trace("rcv tls header", "module", logModule, "conn", &conn.c, "header", fmt.Sprintf("%x", header))
 	length := binary.BigEndian.Uint16(header[3:])
 	payload := make([]byte, length)
 
 	_, err = io.ReadFull(conn.c, payload)
 	if err != nil {
-		log.Errorf("failed readfull payload %v", err)
+		golog.Error("failed readfull payload", "module", logModule, "conn", &conn.c, "error", err)
 	}
-	log.Tracef("rcv tls payload: %x", payload)
+	golog.Trace("rcv tls payload", "module", logModule, "conn", &conn.c, "payload", fmt.Sprintf("%x", payload))
 }
 
 // EnableSessionSslServerMode wraps the underlying net.Conn in a server tls.Conn using the pairRecord.
@@ -266,7 +267,7 @@ func (conn *DeviceConnection) EnableSessionSslHandshakeOnly(pairRecord PairRecor
 func (conn *DeviceConnection) createClientTLSConn(pairRecord PairRecord) (*tls.Conn, error) {
 	cert5, err := tls.X509KeyPair(pairRecord.HostCertificate, pairRecord.HostPrivateKey)
 	if err != nil {
-		log.Error("Error SSL:" + err.Error())
+		golog.Error("Error SSL", "module", logModule, "conn", &conn.c, "error", err)
 		return nil, err
 	}
 	conf := &tls.Config{
@@ -280,11 +281,11 @@ func (conn *DeviceConnection) createClientTLSConn(pairRecord PairRecord) (*tls.C
 	tlsConn := tls.Client(conn.c, conf)
 	err = tlsConn.Handshake()
 	if err != nil {
-		log.Info("Handshake error", err)
+		golog.Info("Handshake error", "module", logModule, "conn", &conn.c, "error", err)
 		return nil, err
 	}
 
-	log.Tracef("enable session ssl on %v and wrap with tlsConn: %v", &conn.c, &tlsConn)
+	golog.Trace("enable session ssl", "module", logModule, "conn", &conn.c, "tlsConn", &tlsConn)
 	return tlsConn, nil
 }
 
@@ -294,7 +295,7 @@ func (conn *DeviceConnection) createServerTLSConn(pairRecord PairRecord) (*tls.C
 	// so it will be accepted by clients
 	cert5, err := tls.X509KeyPair(pairRecord.HostCertificate, pairRecord.HostPrivateKey)
 	if err != nil {
-		log.Error("Error SSL:" + err.Error())
+		golog.Error("Error SSL", "module", logModule, "conn", &conn.c, "error", err)
 		return nil, err
 	}
 	conf := &tls.Config{
@@ -307,10 +308,10 @@ func (conn *DeviceConnection) createServerTLSConn(pairRecord PairRecord) (*tls.C
 	tlsConn := tls.Server(conn.c, conf)
 	err = tlsConn.Handshake()
 	if err != nil {
-		log.Info("Handshake error", err)
+		golog.Info("Handshake error", "module", logModule, "conn", &conn.c, "error", err)
 		return nil, err
 	}
-	log.Tracef("enable session ssl on %v and wrap with tlsConn: %v", &conn.c, &tlsConn)
+	golog.Trace("enable session ssl", "module", logModule, "conn", &conn.c, "tlsConn", &tlsConn)
 	return tlsConn, nil
 }
 

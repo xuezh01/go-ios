@@ -3,9 +3,9 @@ package zipconduit
 import (
 	"encoding/hex"
 	"strings"
-
-	log "github.com/sirupsen/logrus"
 )
+
+const logModule = "go-ios/zipconduit"
 
 // sadly apple does not use a standard compliant zip implementation for this
 // so I had to hack my own basic pseudo zip format together.
@@ -67,7 +67,9 @@ func init() {
 	extra, err := hex.DecodeString(s)
 	zipExtraBytes = extra
 	if err != nil {
-		log.Fatal("this is impossible to break", err)
+		// The input is a hardcoded constant, so this can only fail if the code
+		// itself is wrong — a programmer error, not a runtime condition.
+		panic("zipconduit: invalid hardcoded zip extra bytes: " + err.Error())
 	}
 }
 

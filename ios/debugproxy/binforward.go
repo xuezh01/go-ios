@@ -1,16 +1,18 @@
 package debugproxy
 
 import (
+	"context"
 	"encoding/hex"
 	"io"
+	"log/slog"
 	"path"
 
 	ios "github.com/danielpaulus/go-ios/ios"
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 )
 
 type serviceConfig struct {
-	codec            func(string, string, *log.Entry) decoder
+	codec            func(string, string, *slog.Logger) decoder
 	handshakeOnlySSL bool
 }
 
@@ -110,12 +112,12 @@ func handleConnectToService(connectRequest ios.UsbMuxMessage,
 
 func proxyBinDumpConnection(p *ProxyConnection, binOnUnixSocket BinaryForwardingProxy, binToDevice BinaryForwardingProxy) {
 	defer func() {
-		log.Println("done") // Println executes normally even if there is a panic
+		golog.Info("done", "module", logModule, "id", p.id) // logged normally even if there is a panic
 		if x := recover(); x != nil {
-			log.Printf("run time panic, moving back socket %v", x)
+			golog.Info("run time panic, moving back socket", "module", logModule, "id", p.id, "panic", x)
 			err := MoveBack(ios.GetUsbmuxdSocket())
 			if err != nil {
-				log.WithFields(log.Fields{"error": err}).Error("Failed moving back socket")
+				golog.Error("failed moving back socket", "module", logModule, "id", p.id, "error", err)
 			}
 			panic(x)
 		}
@@ -124,7 +126,7 @@ func proxyBinDumpConnection(p *ProxyConnection, binOnUnixSocket BinaryForwarding
 	for {
 		bytes, err := binOnUnixSocket.ReadMessage()
 		if err != nil {
-			log.WithFields(log.Fields{"error": err}).Error("Failed readmessage bin unix sock")
+			golog.Error("failed readmessage bin unix sock", "module", logModule, "id", p.id, "error", err)
 		}
 		binOnUnixSocket.decoder.decode(bytes)
 		if err != nil && len(bytes) == 0 {
@@ -134,25 +136,25 @@ func proxyBinDumpConnection(p *ProxyConnection, binOnUnixSocket BinaryForwarding
 				p.LogClosed()
 				return
 			}
-			p.log.Errorf("Failed reading bytes %v", err)
+			p.log.Error("failed reading bytes", "error", err)
 			return
 		}
 
 		err = binToDevice.Send(bytes)
 		if err != nil {
-			log.Errorf("failed binforward sending to device: %v", err)
+			golog.Error("failed binforward sending to device", "module", logModule, "id", p.id, "error", err)
 		}
 	}
 }
 
 func proxyBinFromDeviceToHost(p *ProxyConnection, binOnUnixSocket BinaryForwardingProxy, binToDevice BinaryForwardingProxy) {
 	defer func() {
-		log.Println("done") // Println executes normally even if there is a panic
+		golog.Info("done", "module", logModule, "id", p.id) // logged normally even if there is a panic
 		if x := recover(); x != nil {
-			log.Printf("run time panic, moving back socket %v", x)
+			golog.Info("run time panic, moving back socket", "module", logModule, "id", p.id, "panic", x)
 			err := MoveBack(ios.ToUnixSocketPath(ios.GetUsbmuxdSocket()))
 			if err != nil {
-				log.WithFields(log.Fields{"error": err}).Error("Failed moving back socket")
+				golog.Error("failed moving back socket", "module", logModule, "id", p.id, "error", err)
 			}
 			panic(x)
 		}
@@ -160,7 +162,7 @@ func proxyBinFromDeviceToHost(p *ProxyConnection, binOnUnixSocket BinaryForwardi
 	for {
 		bytes, err := binToDevice.ReadMessage()
 		if err != nil {
-			log.WithFields(log.Fields{"error": err}).Errorf("Failed binToDevice.ReadMessage b: %d", len(bytes))
+			golog.Error("failed binToDevice.ReadMessage", "module", logModule, "id", p.id, "error", err, "count", len(bytes))
 		}
 		binToDevice.decoder.decode(bytes)
 
@@ -171,13 +173,13 @@ func proxyBinFromDeviceToHost(p *ProxyConnection, binOnUnixSocket BinaryForwardi
 				p.LogClosed()
 				return
 			}
-			p.log.Errorf("Failed reading bytes %v", err)
+			p.log.Error("failed reading bytes", "error", err)
 			return
 		}
-		p.log.WithFields(log.Fields{"direction": "device2host"}).Trace(hex.Dump(bytes))
+		p.log.With("direction", "device2host").Log(context.Background(), golog.LevelTrace, hex.Dump(bytes))
 		err = binOnUnixSocket.Send(bytes)
 		if err != nil {
-			log.Errorf("failed binforward sending to host: %v", err)
+			golog.Error("failed binforward sending to host", "module", logModule, "id", p.id, "error", err)
 		}
 	}
 }

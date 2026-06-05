@@ -1,7 +1,10 @@
 package ios
 
-import log "github.com/sirupsen/logrus"
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/danielpaulus/go-ios/ios/golog"
+)
 
 const voiceOverTouchKey = "VoiceOverTouchEnabledByiTunes"
 
@@ -15,7 +18,7 @@ func SetVoiceOver(device DeviceEntry, enabled bool) error {
 	if err != nil {
 		return err
 	}
-	log.Debugf("Setting %s: %t", voiceOverTouchKey, enabled)
+	golog.Debug("setting lockdown value", "module", logModule, "udid", device.Properties.SerialNumber, "key", voiceOverTouchKey, "enabled", enabled)
 	defer lockDownConn.Close()
 	err = lockDownConn.SetValueForDomain(voiceOverTouchKey, accessibilityDomain, enabled)
 	return err

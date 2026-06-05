@@ -5,7 +5,7 @@ import (
 	"io"
 
 	ios "github.com/danielpaulus/go-ios/ios"
-	log "github.com/sirupsen/logrus"
+	"github.com/danielpaulus/go-ios/ios/golog"
 	"howett.net/plist"
 )
 
@@ -19,7 +19,7 @@ func proxyLockDownConnection(p *ProxyConnection, lockdownOnUnixSocket *ios.LockD
 				p.LogClosed()
 				return
 			}
-			p.log.Info("Failed reading LockdownMessage", err)
+			p.log.Info("failed reading lockdown message", "error", err)
 			return
 		}
 
@@ -27,35 +27,35 @@ func proxyLockDownConnection(p *ProxyConnection, lockdownOnUnixSocket *ios.LockD
 		decoder := plist.NewDecoder(bytes.NewReader(request))
 		err = decoder.Decode(&decodedRequest)
 		if err != nil {
-			p.log.Info("Failed decoding LockdownMessage", request, err)
+			p.log.Info("failed decoding lockdown message", "request", request, "error", err)
 		}
 		p.logJSONMessageToDevice(map[string]interface{}{"payload": decodedRequest, "type": "LOCKDOWN"})
-		p.log.WithFields(log.Fields{"ID": p.id, "direction": "host2device"}).Info(decodedRequest)
+		p.log.With("ID", p.id, "direction", "host2device").Info("lockdown request", "request", decodedRequest)
 
 		err = lockdownToDevice.Send(decodedRequest)
 		if err != nil {
-			p.log.Errorf("Failed forwarding message to device: %x", request)
+			p.log.Error("failed forwarding message to device", "request", request)
 		}
 		p.log.Info("done sending to device")
 		response, err := lockdownToDevice.ReadMessage()
 		if err != nil {
-			log.Errorf("error reading from device: %+v", err)
+			golog.Error("error reading from device", "module", logModule, "id", p.id, "error", err)
 			response, err = lockdownToDevice.ReadMessage()
-			log.Infof("second read: %+v %+v", response, err)
+			golog.Info("second read", "module", logModule, "id", p.id, "response", response, "error", err)
 		}
 
 		var decodedResponse map[string]interface{}
 		decoder = plist.NewDecoder(bytes.NewReader(response))
 		err = decoder.Decode(&decodedResponse)
 		if err != nil {
-			p.log.Info("Failed decoding LockdownMessage", decodedResponse, err)
+			p.log.Info("failed decoding lockdown message", "response", decodedResponse, "error", err)
 		}
 		p.logJSONMessageFromDevice(map[string]interface{}{"payload": decodedResponse, "type": "LOCKDOWN"})
-		p.log.WithFields(log.Fields{"ID": p.id, "direction": "device2host"}).Info(decodedResponse)
+		p.log.With("ID", p.id, "direction", "device2host").Info("lockdown response", "response", decodedResponse)
 
 		err = lockdownOnUnixSocket.Send(decodedResponse)
 		if err != nil {
-			p.log.Info("Failed sending LockdownMessage from device to host service", decodedResponse, err)
+			p.log.Info("failed sending lockdown message from device to host service", "response", decodedResponse, "error", err)
 		}
 		if decodedResponse["EnableSessionSSL"] == true {
 			lockdownToDevice.EnableSessionSsl(p.pairRecord)
@@ -73,13 +73,13 @@ func proxyLockDownConnection(p *ProxyConnection, lockdownOnUnixSocket *ios.LockD
 				UseSSL:      useSSL,
 			}
 
-			p.log.Debugf("Detected Service Start:%+v", info)
+			p.log.Debug("detected service start", "service", info)
 			p.debugProxy.storeServiceInformation(info)
 
 		}
 
 		if decodedResponse["Request"] == "StopSession" {
-			p.log.Info("Stop Session detected, disabling SSL")
+			p.log.Info("stop session detected, disabling SSL")
 			lockdownOnUnixSocket.DisableSessionSSL()
 			lockdownToDevice.DisableSessionSSL()
 		}
