@@ -41,7 +41,7 @@ func TestDeviceListCommandOnlyMatchesTopLevelList(t *testing.T) {
 		t.Fatal("top-level list command did not match")
 	}
 
-	for _, commandName := range []string{"diagnostics", "image", "devicestate", "profile"} {
+	for _, commandName := range []string{"diagnostics", "image", "devicestate", "profile", "webinspector"} {
 		args := docopt.Opts{"list": true, commandName: true}
 		if isDeviceListCommand(args) {
 			t.Fatalf("list subcommand for %s matched top-level list", commandName)
@@ -55,5 +55,37 @@ func TestTunnelCommandMatcher(t *testing.T) {
 	}
 	if isTunnelCommand(docopt.Opts{"tunnel": false}) {
 		t.Fatal("non-tunnel command matched")
+	}
+}
+
+func TestNeedsAutomaticTunnelInfo(t *testing.T) {
+	testCases := []struct {
+		name string
+		args docopt.Opts
+		want bool
+	}{
+		{name: "zoom stays tunnel-free", args: docopt.Opts{"zoom": true}, want: false},
+		{name: "voiceover stays tunnel-free", args: docopt.Opts{"voiceover": true}, want: false},
+		{name: "assistivetouch stays tunnel-free", args: docopt.Opts{"assistivetouch": true}, want: false},
+		{name: "timeformat stays tunnel-free", args: docopt.Opts{"timeformat": true}, want: false},
+		{name: "file needs tunnel", args: docopt.Opts{"file": true}, want: true},
+		{name: "rsd needs tunnel", args: docopt.Opts{"rsd": true}, want: true},
+		{name: "display info needs tunnel", args: docopt.Opts{"info": true, "display": true}, want: true},
+		{name: "plain info stays tunnel-free", args: docopt.Opts{"info": true}, want: false},
+		{name: "syslog needs tunnel when available", args: docopt.Opts{"syslog": true}, want: true},
+		{name: "runtest needs tunnel on iOS 17", args: docopt.Opts{"runtest": true}, want: true},
+		{name: "devicestate needs tunnel (instruments)", args: docopt.Opts{"devicestate": true}, want: true},
+		{name: "resetlocation needs tunnel (instruments)", args: docopt.Opts{"resetlocation": true}, want: true},
+		{name: "setlocationgpx needs tunnel (instruments)", args: docopt.Opts{"setlocationgpx": true}, want: true},
+		{name: "ui run needs tunnel (testmanagerd)", args: docopt.Opts{"ui": true, "run": true}, want: true},
+		{name: "ui status stays tunnel-free", args: docopt.Opts{"ui": true, "status": true}, want: false},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := needsAutomaticTunnelInfo(testCase.args); got != testCase.want {
+				t.Fatalf("needsAutomaticTunnelInfo() = %t, want %t", got, testCase.want)
+			}
+		})
 	}
 }

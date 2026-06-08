@@ -35,6 +35,10 @@ func runTimeFormatCommand(ctx commandContext) {
 }
 
 func runAXCommand(ctx commandContext) {
+	if audit, _ := ctx.Args.Bool("audit"); audit {
+		runAxAudit(ctx.Device)
+		return
+	}
 	startAx(ctx.Device, ctx.Args)
 }
 

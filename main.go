@@ -8,9 +8,12 @@ import (
 	"encoding/pem"
 	"fmt"
 	"log/slog"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"sort"
 	"strconv"
@@ -76,6 +79,7 @@ Usage:
   ios apps [--system] [--all] [--list] [--filesharing] [options]
   ios assistivetouch (enable | disable | toggle | get) [--force] [options]
   ios ax [--font=<fontSize>] [options]
+  ios ax audit [options]
   ios batterycheck [options]
   ios batteryregistry [options]
   ios crash cp <srcpattern> <target> [options]
@@ -135,7 +139,8 @@ Usage:
   ios runwda [--bundleid=<bundleid>] [--testrunnerbundleid=<testbundleid>] [--xctestconfig=<xctestconfig>] [--log-output=<file>] [--arg=<a>]... [--env=<e>]... [options]
   ios runxctest [--xctestrun-file-path=<xctestrunFilePath>] [--log-output=<file>] [options]
   ios screenshot [options] [--output=<outfile>] [--stream] [--port=<port>]
-  ios sign provision appstoreconnect --bundleid=<bundleid> --asc-key-id=<keyid> --asc-issuer-id=<issuerid> --asc-private-key=<p8file> --p12-output=<p12file> --profile-output=<mobileprovision> [--p12password=<password>] [--bundle-name=<name>] [--profile-name=<name>] [--device-name=<name>] [options]
+  ios sign certificate appstoreconnect --asc-key-id=<keyid> --asc-issuer-id=<issuerid> --asc-private-key=<p8file> [--p12-output=<p12file>] [--p12password=<password>] [--revoke-existing] [options]
+  ios sign provision appstoreconnect --bundleid=<bundleid> --asc-key-id=<keyid> --asc-issuer-id=<issuerid> --asc-private-key=<p8file> --profile-output=<mobileprovision> [--p12-output=<p12file>] [--certificate-id=<id>] [--revoke-existing] [--p12password=<password>] [--bundle-name=<name>] [--profile-name=<name>] [--device-name=<name>] [options]
   ios sign app --path=<ipaOrAppFolder> --p12file=<p12file> --profile=<mobileprovision> [--p12password=<password>] [--output=<signedPath>] [--bundleid=<bundleid>] [--install] [options]
   ios setlocation [options] [--lat=<lat>] [--lon=<lon>]
   ios setlocationgpx [options] [--gpxfilepath=<gpxfilepath>]
@@ -149,9 +154,12 @@ Usage:
   ios sysmontap [options]
   ios timeformat (24h | 12h | toggle | get) [--force] [options]
   ios tunnel ls [options]
+  ios tunnel stop [options]
+  ios tunnel refresh [options]
   ios tunnel start [options] [--pair-record-path=<pairrecordpath>] [--userspace]
   ios tunnel stopagent
   ios ui install (wda | devicekit) --p12file=<p12file> --profile=<mobileprovision> [--p12password=<password>] [--path=<ipaOrZipOrApp>] [--output=<signedPath>] [--bundleid=<bundleid>] [options]
+  ios ui run (wda | devicekit) [--bundleid=<bundleid>] [--test-runner-bundleid=<id>] [--xctest-config=<name>] [--host-port=<port>] [--log-output=<file>] [options]
   ios ui download [(wda | devicekit | all)] [--output=<dir>] [options]
   ios ui status [--driver=<driver>] [--wda-url=<url>] [--devicekit-url=<url>] [options]
   ios ui api [--driver=<driver>] [--method=<method>] [--http-path=<path>] [--body=<json>] [--body-file=<file>] [--rpc-method=<method>] [--params=<json>] [--params-file=<file>] [--wda-url=<url>] [--devicekit-url=<url>] [options]
@@ -207,6 +215,8 @@ Options:
                             App Store Connect API issuer id. Can also be set via GO_IOS_ASC_ISSUER_ID.
   --asc-private-key=<p8file>
                             App Store Connect API .p8 private key path. Can also be set via GO_IOS_ASC_PRIVATE_KEY.
+  --revoke-existing         Revoke every existing iOS Development certificate before creating a new one. Apple allows only one current development certificate, so set this to keep provisioning repeatable (use only on a dedicated signing account, e.g. CI).
+  --certificate-id=<id>     Provision a profile against an existing App Store Connect certificate (by resource id) instead of creating one. No certificate is created/revoked and no P12 is written; reuse a pre-provisioned signing identity.
   --p12file=<p12file>       P12 identity file path.
   --profile=<mobileprovision>
                             Provisioning profile path for app signing.
@@ -234,6 +244,8 @@ The commands work as following:
                                                           iOS 11+ only (Use --force to try on older versions).
 
     ios ax [--font=<fontSize>] [options]          Access accessibility inspector features.
+    ios ax audit [options]                        Run the accessibility audit on the focused app and print the issues as JSON.
+                                                  Each issue includes its type, the element's label and on-screen rect.
     ios batterycheck [options]                    Prints battery info.
     ios batteryregistry [options]                 Prints battery registry stats like Temperature, Voltage.
     ios crash cp <srcpattern> <target> [options]  Copy "file pattern" to the target dir. Ex.: 'ios crash cp "*" "./crashes"'
@@ -417,7 +429,7 @@ The commands work as following:
 
     ios sign provision appstoreconnect --bundleid=<bundleid> --asc-key-id=<keyid> --asc-issuer-id=<issuerid> --asc-private-key=<p8file> --p12-output=<p12file> --profile-output=<mobileprovision>
                                                                     Creates an iOS development signing certificate, P12, and provisioning profile through App Store Connect.
-                                                                    This command does not sign an app.
+                                                                    This command does not sign an app. Pass --revoke-existing to revoke a leftover go-ios certificate first (repeatable provisioning).
 
     ios sign app --path=<ipaOrAppFolder> --p12file=<p12file> --profile=<mobileprovision>
                                                                     Resigns the IPA or .app with go-codesign using local signing files,
@@ -428,6 +440,12 @@ The commands work as following:
                                                                     Downloads the default DeviceKit or WDA artifact from deviceboxhq.com unless --path is provided,
                                                                     signs it with local signing files, and installs it on the selected device.
                                                                     Run "ios ui download" to pre-download artifacts, or pass --path to use your own local build.
+
+    ios ui run (wda | devicekit) [--bundleid=<bundleid>] [--host-port=<port>] [--log-output=<file>]
+                                                                    Runs an installed UI automation runner (WebDriverAgent or DeviceKit) and forwards
+                                                                    its port to the host, so "ios ui ..." can reach it at http://127.0.0.1:<host-port>
+                                                                    (defaults: WDA 8100, DeviceKit 12004). Blocks until interrupted. The run
+                                                                    counterpart to "ios ui install".
 
     ios ui download [(wda | devicekit | all)] [--output=<dir>]       Downloads default WDA and/or DeviceKit artifacts from deviceboxhq.com,
                                                                     extracts zip artifacts, and prints JSON describing the files.
@@ -506,12 +524,22 @@ The commands work as following:
                                                                     Use --enabletun to activate using TUN devices rather than user space network.
                                                                     Requires sudo/admin shells.
 
+    ios tunnel stop --udid=<udid>                                   Stop the tunnel for one device without stopping the tunnel agent.
+
+    ios tunnel refresh --udid=<udid>                                Stop the tunnel for one device and wait until the agent recreates it.
+
     ios tunnel start [options] [--pair-record-path=<pairrecordpath>] [--enabletun]
                                                                     Creates a tunnel connection to the device.
                                                                     If the device was not paired with the host yet, device pairing will also be executed.
                                                                     On systems with System Integrity Protection enabled the argument '--pair-record-path=default'
                                                                     can be used to point to /var/db/lockdown/RemotePairing/user_501.
+                                                                    WARNING: macOS 26 (Tahoe) and newer block that path for third-party binaries via TCC
+                                                                    ('operation not permitted'). On those systems do NOT use '=default'; pass a stable
+                                                                    writable directory instead (e.g. --pair-record-path=/Users/Shared/go-ios) and go-ios
+                                                                    will manage its own tunnel identity. See https://github.com/danielpaulus/go-ios/issues/710
                                                                     If nothing is specified, the current dir is used for the pair record.
+                                                                    Pass --udid=<udid> to restrict the agent to a single device (isolated
+                                                                    per-device tunnel agent); run one per device on its own --tunnel-info-port.
                                                                     This command needs to be executed with admin privileges.
                                                                     (On MacOS the process 'remoted' must be paused before starting a tunnel,
                                                                     is possible 'sudo pkill -SIGSTOP remoted', and 'sudo pkill -SIGCONT remoted' to resume)
@@ -936,6 +964,25 @@ func startAx(device ios.DeviceEntry, arguments docopt.Opts) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	<-c
+}
+
+// axSilentNotifier is a no-op AccessibilityInspectorNotifier for one-shot AX
+// commands that don't stream device events.
+type axSilentNotifier struct{}
+
+func (axSilentNotifier) HostAppStateChanged(accessibility.Notification)               {}
+func (axSilentNotifier) HostInspectorNotificationReceived(accessibility.Notification) {}
+
+func runAxAudit(device ios.DeviceEntry) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	conn, err := accessibility.New(ctx, device, axSilentNotifier{})
+	exitIfError("failed starting ax", err)
+	defer conn.Close()
+
+	issues, err := conn.RunAudit(ctx)
+	exitIfError("ax audit failed", err)
+	fmt.Println(convertToJSONString(issues))
 }
 
 func resetAx(device ios.DeviceEntry) {
@@ -1777,10 +1824,29 @@ func pairDevice(device ios.DeviceEntry, orgIdentityP12File string, p12Password s
 	slog.Info(fmt.Sprintf("Successfully paired %s", device.Properties.SerialNumber))
 }
 
-func startTunnel(ctx context.Context, recordsPath string, tunnelInfoHost string, tunnelInfoPort int, userspaceTUN bool) {
+func startTunnel(ctx context.Context, recordsPath string, tunnelInfoHost string, tunnelInfoPort int, userspaceTUN bool, udid string) {
+	// Optional profiling endpoint: set GO_IOS_PPROF=host:port (e.g. 127.0.0.1:6060)
+	// to expose net/http/pprof (CPU, heap, block and mutex profiles) on the agent.
+	if addr := os.Getenv("GO_IOS_PPROF"); addr != "" {
+		runtime.SetBlockProfileRate(1)     // record goroutine blocking events
+		runtime.SetMutexProfileFraction(1) // record mutex contention
+		go func() {
+			slog.Info("pprof listening", "addr", addr)
+			if err := http.ListenAndServe(addr, nil); err != nil {
+				slog.Warn("pprof server stopped", "error", err)
+			}
+		}()
+	}
 	pm, err := tunnel.NewPairRecordManager(recordsPath)
 	exitIfError("could not creat pair record manager", err)
-	tm := tunnel.NewTunnelManager(pm, userspaceTUN)
+	if udid != "" {
+		slog.Info("restricting tunnel agent to a single device", "udid", udid, "tunnelInfoPort", tunnelInfoPort)
+	}
+	// Always derive userspace listener ports from THIS agent's tunnel-info port
+	// (not the global default), so several agents on different ports — e.g. a
+	// general agent plus per-device agents — never collide. An empty udid means
+	// "manage all devices".
+	tm := tunnel.NewTunnelManagerForDevice(pm, userspaceTUN, udid, tunnelInfoPort)
 
 	go func() {
 		ticker := time.NewTicker(1 * time.Second)

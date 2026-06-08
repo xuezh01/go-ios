@@ -2,6 +2,7 @@ package forward
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -68,6 +69,13 @@ func connectionAccept(cl *ConnListener, deviceID int, phonePort uint16) {
 		default:
 			clientConn, err := cl.listener.Accept()
 			if err != nil {
+				// Close() shuts the listener down, which unblocks this Accept()
+				// with net.ErrClosed. That's a clean teardown, not a failure, so
+				// don't log it as an error — just exit the accept loop.
+				if errors.Is(err, net.ErrClosed) {
+					golog.Info("closed listener successfully", "module", logModule, "deviceID", deviceID, "phonePort", phonePort)
+					return
+				}
 				golog.Error("error accepting new connection", "module", logModule, "deviceID", deviceID, "phonePort", phonePort, "error", err)
 				continue
 			}
@@ -93,47 +101,61 @@ func StartNewProxyConnection(ctx context.Context, clientConn io.ReadWriteCloser,
 	golog.Info("connected to port", "module", logModule, "deviceID", deviceID, "conn", fmt.Sprintf("%#v", clientConn), "phonePort", phonePort)
 	deviceConn := usbmuxConn.ReleaseDeviceConnection()
 
-	// proxyConn := iosproxy{clientConn, deviceConn}
-	ctx2, cancel := context.WithCancel(ctx)
-	var wg sync.WaitGroup
-	wg.Add(1)
+	proxyConns(ctx, clientConn, deviceConn, deviceID, phonePort)
+	return nil
+}
 
-	closed := false
-	go func() {
-		io.Copy(clientConn, deviceConn.Reader())
-		if ctx2.Err() == nil {
+// deviceRWConn is the subset of ios.DeviceConnectionInterface that the proxy
+// pump needs. Narrowing it to this lets proxyConns be exercised with in-memory
+// pipes in tests, without standing up a usbmux/device connection.
+type deviceRWConn interface {
+	Reader() io.Reader
+	Writer() io.Writer
+	Close() error
+}
+
+// proxyConns is the device-free core of the forward: it pumps bytes in both
+// directions between clientConn and deviceConn until either side closes (or ctx
+// is cancelled), then tears both down exactly once and waits for both copy
+// goroutines to finish. Teardown is funnelled through a sync.Once so the two
+// copiers and the ctx watcher can all race to close without a data race or a
+// double-close, and so it returns with no goroutines left running.
+func proxyConns(ctx context.Context, clientConn io.ReadWriteCloser, deviceConn deviceRWConn, deviceID int, phonePort uint16) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Closing the conns unblocks whichever io.Copy is still parked in a read,
+	// and cancel() releases the watcher below. sync.Once makes this safe to
+	// call from all three goroutines concurrently.
+	var once sync.Once
+	teardown := func() {
+		once.Do(func() {
 			cancel()
 			clientConn.Close()
 			deviceConn.Close()
-			closed = true
-		}
-
-		golog.Error("forward: close clientConn <-- deviceConn", "module", logModule, "deviceID", deviceID, "phonePort", phonePort)
-		wg.Done()
-	}()
-
-	wg.Add(1)
-	go func() {
-		io.Copy(deviceConn.Writer(), clientConn)
-		if ctx2.Err() == nil {
-			cancel()
-			clientConn.Close()
-			deviceConn.Close()
-			closed = true
-		}
-
-		golog.Error("forward: close clientConn --> deviceConn", "module", logModule, "deviceID", deviceID, "phonePort", phonePort)
-		wg.Done()
-	}()
-
-	<-ctx2.Done()
-	if !closed {
-		clientConn.Close()
-		deviceConn.Close()
+		})
 	}
 
+	var wg sync.WaitGroup
+	copyAndClose := func(dst io.Writer, src io.Reader, msg string) {
+		defer wg.Done()
+		_, err := io.Copy(dst, src)
+		teardown()
+
+		if err == nil || errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+			golog.Debug(msg, "module", logModule, "deviceID", deviceID, "phonePort", phonePort)
+		} else {
+			golog.Error(msg, "module", logModule, "deviceID", deviceID, "phonePort", phonePort, "error", err)
+		}
+	}
+
+	wg.Add(2)
+	go copyAndClose(clientConn, deviceConn.Reader(), "forward: close clientConn <-- deviceConn")
+	go copyAndClose(deviceConn.Writer(), clientConn, "forward: close clientConn --> deviceConn")
+
+	<-ctx.Done()
+	teardown()
 	wg.Wait()
-	return nil
 }
 
 func (proxyConn *iosproxy) Close() {

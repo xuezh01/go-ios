@@ -42,6 +42,9 @@ commands:
   - path: ax
     usage: ios ax [--font=<fontSize>] [options]
     summary: Accessibility inspector features.
+  - path: ax audit
+    usage: ios ax audit [options]
+    summary: Run accessibility audit.
   - path: batterycheck
     usage: ios batterycheck [options]
     summary: Battery information.
