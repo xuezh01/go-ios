@@ -26,6 +26,7 @@ Commands:
   apps                            List installed applications.
   assistivetouch                  Manage AssistiveTouch state.
   ax                              Accessibility inspector features.
+  ax audit                        Run accessibility audit.
   batterycheck                    Battery information.
   batteryregistry                 Battery registry metrics.
   crash cp                        Copy crash reports.

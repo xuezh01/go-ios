@@ -79,6 +79,7 @@ Usage:
   ios apps [--system] [--all] [--list] [--filesharing] [options]
   ios assistivetouch (enable | disable | toggle | get) [--force] [options]
   ios ax [--font=<fontSize>] [options]
+  ios ax audit [options]
   ios batterycheck [options]
   ios batteryregistry [options]
   ios crash cp <srcpattern> <target> [options]
@@ -237,6 +238,8 @@ The commands work as following:
                                                           iOS 11+ only (Use --force to try on older versions).
 
     ios ax [--font=<fontSize>] [options]          Access accessibility inspector features.
+    ios ax audit [options]                        Run the accessibility audit on the focused app and print the issues as JSON.
+                                                  Each issue includes its type, the element's label and on-screen rect.
     ios batterycheck [options]                    Prints battery info.
     ios batteryregistry [options]                 Prints battery registry stats like Temperature, Voltage.
     ios crash cp <srcpattern> <target> [options]  Copy "file pattern" to the target dir. Ex.: 'ios crash cp "*" "./crashes"'
@@ -943,6 +946,25 @@ func startAx(device ios.DeviceEntry, arguments docopt.Opts) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	<-c
+}
+
+// axSilentNotifier is a no-op AccessibilityInspectorNotifier for one-shot AX
+// commands that don't stream device events.
+type axSilentNotifier struct{}
+
+func (axSilentNotifier) HostAppStateChanged(accessibility.Notification)               {}
+func (axSilentNotifier) HostInspectorNotificationReceived(accessibility.Notification) {}
+
+func runAxAudit(device ios.DeviceEntry) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	conn, err := accessibility.New(ctx, device, axSilentNotifier{})
+	exitIfError("failed starting ax", err)
+	defer conn.Close()
+
+	issues, err := conn.RunAudit(ctx)
+	exitIfError("ax audit failed", err)
+	fmt.Println(convertToJSONString(issues))
 }
 
 func resetAx(device ios.DeviceEntry) {
