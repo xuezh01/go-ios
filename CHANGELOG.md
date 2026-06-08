@@ -13,6 +13,53 @@ Use `## [Unreleased]` to jot down notable changes between releases if you like.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-06-08
+
+## Highlights
+
+- **New `ios ui run (wda | devicekit)`** — bring up a WebDriverAgent or DeviceKit UI-automation runner and forward its port, the run counterpart to `ui download`/`ui install` (#761).
+- **Accessibility audit** — `ios ax audit` runs the on-device accessibility audit on iOS 14–18, with structured output (#618).
+- **WebInspector / CDP** — new WebInspector service with a Chrome DevTools Protocol bridge, interactive controls, and a JS shell (#744).
+- **Apple signing + UI automation commands** — sign and drive WDA/DeviceKit runners directly from the CLI.
+- **`runtest` / `runxctest` now emit test results as JSON** to stdout, always (#573).
+
+## Tunnel (iOS 17+)
+
+- Per-device tunnel stop and refresh (#738).
+- Userspace tunnel: IPv6 framing fix and TLS-PSK transport for iOS 18.2+, plus robustness and performance work (#748).
+- Limit automatic tunnel lookup to RSD commands (#753); attach tunnel info to `devicestate` / `resetlocation` / `setlocationgpx` (#756).
+- Fix a usbmux socket leak in `TunnelManager` — skip network devices and back off failed ones (#682).
+- More reliable single-device reconnect handling (#691).
+
+## Fixes
+
+- `forward`: stop logging normal connection teardown as errors (#754, #639) and make teardown race-free (#762).
+- `instruments`: retry transient device launch failures (NSError code 2), fixing flaky `ios launch` (#763).
+- Windows: stop the TUN event loop spinning when a device disconnects (#690).
+- Replace a panic with an error return in the archive path (#705).
+- Warn that `--pair-record-path=default` is TCC-blocked on macOS 26+ (#747).
+- Better error messages explaining why instruments/devmode fail on unsupported devices (#742).
+
+## Internal
+
+- Go 1.26 across all modules; device command dispatch refactored into per-domain handlers; expanded real-device e2e coverage (pre-iOS17, WebInspector, signing, accessibility) with the data-race detector enabled in unit CI.
+
+## 🙏 Thanks to our contributors
+
+This release was made possible by a fantastic group of contributors — thank you all:
+
+- **@sakhisheikh** (Sakhi Mansoor) — built out the accessibility APIs (toggle caption text, first/last element, AX queries) that underpin `ios ax audit` (#618). 🎉
+- **@aluedeke** (Andreas Lüdeke) — sharp-eyed fix to stop `forward` logging normal connection teardown as errors, with a clean half-duplex refactor (#754).
+- **@lizhizhuanshu** (Ponder) — caught and fixed a Windows goroutine that busy-spun forever when a device disconnects (#690). A year-old fix, finally landed — worth the wait!
+- **@vbragaru** — diagnosed and fixed a real usbmux socket leak in `TunnelManager`, complete with overnight `lsof` evidence (#682). Excellent debugging.
+- **@briankrznarich** (Brian Krznarich) — spotted spurious errors logged when a forward connection is cleanly closed (#639). Precise root-cause, patiently carried across go-ios's logrus→golog migration.
+- **@dmdmdm-nz** — made `runtest`/`runxctest` emit machine-readable JSON results, so test output is finally pipeable (#573, #574).
+- **@mvanhorn** (Matt Van Horn) — replaced a panic with a proper error return in the archive path, making the library safer to embed (#705).
+
+…and **@danielpaulus** for the WebInspector/CDP bridge, `ios ui run`, the tunnel and signing work, and shepherding it all in. 🚀
+
+Several of these PRs had been waiting a while and were rebased onto current `main` with the contributors' original authorship preserved. Thank you for your patience and your excellent work — go-ios is better because of you.
+
 ## [1.1.0] - 2026-06-04
 
 ## What's new
