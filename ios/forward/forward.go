@@ -94,9 +94,9 @@ func StartNewProxyConnection(ctx context.Context, clientConn io.ReadWriteCloser,
 	}
 	muxError := usbmuxConn.Connect(deviceID, phonePort)
 	if muxError != nil {
-		golog.Info("could not connect to phone", "module", logModule, "deviceID", deviceID, "conn", fmt.Sprintf("%#v", clientConn), "error", muxError, "phonePort", phonePort)
+		golog.Debug("could not connect to phone", "module", logModule, "deviceID", deviceID, "conn", fmt.Sprintf("%#v", clientConn), "error", muxError, "phonePort", phonePort)
 		clientConn.Close()
-		return fmt.Errorf("could not connect to port:%d on iOS: %v", phonePort, err)
+		return fmt.Errorf("could not connect to port:%d on iOS: %v", phonePort, muxError)
 	}
 	golog.Debug("connected to port", "module", logModule, "deviceID", deviceID, "conn", fmt.Sprintf("%#v", clientConn), "phonePort", phonePort)
 	deviceConn := usbmuxConn.ReleaseDeviceConnection()
